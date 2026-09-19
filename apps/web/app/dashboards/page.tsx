@@ -4,6 +4,8 @@ import { KpiCard } from "@/components/dashboard/KpiCard";
 import { LineChart } from "@/components/dashboard/LineChart";
 import { BarChart } from "@/components/dashboard/BarChart";
 import { DonutChart } from "@/components/dashboard/DonutChart";
+import { FunnelChart } from "@/components/dashboard/FunnelChart";
+import { HorizontalBarChart } from "@/components/dashboard/HorizontalBarChart";
 import { useMetrics } from "@/lib/useMetrics";
 
 export default function DashboardPage() {
@@ -194,6 +196,126 @@ export default function DashboardPage() {
                 { label: "Retention", value: m.retentionRate, color: "#1757A6" },
                 { label: "Engagement", value: Math.min(m.avgEngagement / 4, 100), color: "#7c3aed" },
               ]}
+            />
+          </div>
+        </div>
+
+        {/* BA Section — Signing & Form Usage */}
+        <div className="mb-2 mt-8 text-xs font-bold uppercase tracking-wide text-ink-500">Business Analytics — Signing & Form Usage</div>
+
+        {/* BA KPI Cards */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <KpiCard
+            label="Total Signed"
+            value={m.totalSigned}
+            unit="docs"
+            icon="✍️"
+            color="status-ready"
+            trend="up"
+            trendValue="All time"
+          />
+          <KpiCard
+            label="Sign Success Rate"
+            value={m.signSuccessRate.toFixed(1)}
+            unit="%"
+            icon="📊"
+            color="brand"
+            trend="up"
+            trendValue="Form → Signed"
+          />
+          <KpiCard
+            label="Forms Used (Chat)"
+            value={m.formUsageBySource[0]?.count || 0}
+            unit="times"
+            icon="💬"
+            color="navy"
+            trend="up"
+            trendValue="Persona-driven"
+          />
+          <KpiCard
+            label="Forms Used (AI Fill)"
+            value={m.formUsageBySource[1]?.count || 0}
+            unit="times"
+            icon="🤖"
+            color="status-review"
+            trend="up"
+            trendValue="From /forms page"
+          />
+        </div>
+
+        {/* BA Charts — Row 1: Funnel + Source Pie */}
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {/* Signing Funnel */}
+          <div className="rounded-card border border-ink-200 bg-white p-4 shadow-card lg:col-span-2">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-ink-900">Signing Funnel — Form → Signed</h2>
+              <span className="rounded-full bg-status-readyBg px-2 py-0.5 text-[10px] font-bold text-status-ready">
+                {m.signSuccessRate.toFixed(1)}% success
+              </span>
+            </div>
+            <FunnelChart stages={m.signFunnel} height={200} />
+          </div>
+
+          {/* Form Usage by Source — Donut */}
+          <div className="rounded-card border border-ink-200 bg-white p-4 shadow-card">
+            <h2 className="mb-3 text-sm font-bold text-ink-900">Form Usage by Source</h2>
+            <DonutChart
+              label="sessions"
+              segments={m.formUsageBySource.map((s) => ({
+                label: s.source,
+                value: s.count,
+                color: s.color,
+              }))}
+            />
+          </div>
+        </div>
+
+        {/* BA Charts — Row 2: Most Used Forms + Sign Trend */}
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Most Used Forms — Horizontal Bar */}
+          <div className="rounded-card border border-ink-200 bg-white p-4 shadow-card">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-ink-900">Most Used Forms (All Sources)</h2>
+              <span className="text-[10px] text-ink-500">Chat + Forms page</span>
+            </div>
+            <HorizontalBarChart
+              height={250}
+              data={m.formUsage
+                .slice()
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 9)
+                .map((f, i) => ({
+                  label: f.code.replace("MSB-", ""),
+                  value: f.count,
+                  color: f.source === "Chat" ? "#E30613" : "#7c3aed",
+                  sublabel: f.source,
+                }))}
+            />
+            <div className="mt-2 flex items-center gap-4 text-[10px]">
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-brand" /> Chat (persona)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "#7c3aed" }} /> Forms (AI Fill)
+              </span>
+            </div>
+          </div>
+
+          {/* Sign Trend — Stacked Bar */}
+          <div className="rounded-card border border-ink-200 bg-white p-4 shadow-card">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-ink-900">Daily Sign Trend (14 days)</h2>
+              <span className="rounded-full bg-navy-50 px-2 py-0.5 text-[10px] font-bold text-navy-900">
+                {m.signTrend.reduce((sum, d) => sum + d.signed, 0)} total signed
+              </span>
+            </div>
+            <BarChart
+              height={180}
+              data={m.signTrend.map((d, i) => ({
+                label: `D${i + 1}`,
+                value: d.signed,
+                color: "#00A676",
+              }))}
             />
           </div>
         </div>
