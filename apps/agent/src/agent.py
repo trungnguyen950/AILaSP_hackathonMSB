@@ -113,6 +113,21 @@ def b3_find_form(state: GraphState) -> dict:
 
 
 # --- Guided flow: explain form fields ---
+def _detect_language(state: GraphState) -> str:
+    """Detect preferred language: 'vi' or 'en'."""
+    msg = state.get("message", "").lower()
+    customer = state.get("customer")
+    english_markers = ["our company", "please", "bilingual", "forms", "i would like",
+                       "accountant", "approver", "prepare", "foreign", "passport", "english"]
+    en_count = sum(1 for m in english_markers if m in msg)
+    if en_count >= 2:
+        return "en"
+    if customer and customer.is_fdi and customer.legal_rep_nationality and customer.legal_rep_nationality != "Vietnam":
+        if en_count >= 1:
+            return "en"
+    return "vi"
+
+
 def b3a_explain_form(state: GraphState) -> dict:
     """Explain the selected form: name, purpose, each field with guidance."""
     tpl = _template(state.get("selected_code"))
@@ -120,36 +135,55 @@ def b3a_explain_form(state: GraphState) -> dict:
         return {"conversation_phase": "collecting"}
     meta = tpl.meta
     customer = state.get("customer")
+    lang = _detect_language(state)
 
     lines = []
-    # Greeting
-    lines.append(f"Cam on quy khach da lien he MSB SmartForm AI.\n")
-    # Form identification
-    bilingual_note = " (song ngu VI-EN)" if meta.bilingual else ""
-    lines.append(f"📋 **Mau bieu mau phu hop:** {meta.code} — {meta.name}{bilingual_note}")
-    lines.append(f"   Muc dich: {meta.use_case}\n")
-    # Customer type
-    if customer:
-        ctype = "Doanh nghiep FDI" if customer.is_fdi else ("Doanh nghiep" if customer.type == "org" else "Ca nhan")
-        lines.append(f"👤 Loai khach hang: {ctype}")
-    lines.append("")
-
-    # Field explanations
-    lines.append("📝 **Cac truong can dien:**")
-    for i, f in enumerate(tpl.fields, 1):
-        if form_engine.is_secret(f.key):
-            continue
-        label = f.label
-        if f.label_en:
-            label = f"{f.label} / {f.label_en}"
-        req = "*" if f.required else " (tu chon)"
-        lines.append(f"\n  {i}. {label}{req}")
-        guidance = _field_guidance(f)
-        if guidance:
-            lines.append(f"     → {guidance}")
-
-    lines.append(f"\n📄 Ho so kem theo: {', '.join(meta.accompanying_docs)}")
-    lines.append(f"✍️ Nguoi ky: {meta.signer}")
+    if lang == "en":
+        lines.append("Thank you for contacting MSB SmartForm AI.\n")
+        bilingual_note = " (Bilingual VI-EN)" if meta.bilingual else ""
+        lines.append(f"📋 **Recommended form:** {meta.code} — {meta.name}{bilingual_note}")
+        lines.append(f"   Purpose: {meta.use_case}\n")
+        if customer:
+            ctype = "FDI Enterprise" if customer.is_fdi else ("Corporate" if customer.type == "org" else "Individual")
+            lines.append(f"👤 Customer type: {ctype}")
+        lines.append("")
+        lines.append("📝 **Fields to complete:**")
+        for i, f in enumerate(tpl.fields, 1):
+            if form_engine.is_secret(f.key):
+                continue
+            label = f.label_en or f.label
+            req = " *" if f.required else " (optional)"
+            guidance = _field_guidance(f, "en")
+            if guidance:
+                lines.append(f"  {i}. {label}{req} — {guidance}")
+            else:
+                lines.append(f"  {i}. {label}{req}")
+        lines.append(f"\n📄 Required documents: {', '.join(meta.accompanying_docs)}")
+        lines.append(f"✍️ Signatory: {meta.signer}")
+    else:
+        lines.append("Cảm ơn Quý khách đã liên hệ MSB SmartForm AI.\n")
+        bilingual_note = " (song ngữ VI-EN)" if meta.bilingual else ""
+        lines.append(f"📋 **Mẫu biểu mẫu phù hợp:** {meta.code} — {meta.name}{bilingual_note}")
+        lines.append(f"   Mục đích: {meta.use_case}\n")
+        if customer:
+            ctype = "Doanh nghiệp FDI" if customer.is_fdi else ("Doanh nghiệp" if customer.type == "org" else "Cá nhân")
+            lines.append(f"👤 Loại khách hàng: {ctype}")
+        lines.append("")
+        lines.append("📝 **Các trường cần điền:**")
+        for i, f in enumerate(tpl.fields, 1):
+            if form_engine.is_secret(f.key):
+                continue
+            label = f.label
+            if f.label_en and meta.bilingual:
+                label = f"{f.label} / {f.label_en}"
+            req = " *" if f.required else " (tự chọn)"
+            guidance = _field_guidance(f, "vi")
+            if guidance:
+                lines.append(f"  {i}. {label}{req} — {guidance}")
+            else:
+                lines.append(f"  {i}. {label}{req}")
+        lines.append(f"\n📄 Hồ sơ kèm theo: {', '.join(meta.accompanying_docs)}")
+        lines.append(f"✍️ Người ký: {meta.signer}")
 
     explanation = "\n".join(lines)
     return {"conversation_phase": "explaining", "explanation": explanation}
@@ -162,6 +196,7 @@ def b3b_provide_example(state: GraphState) -> dict:
         return {"conversation_phase": "collecting"}
     customer = state.get("customer")
     meta = tpl.meta
+    lang = _detect_language(state)
 
     # Build example values
     example_vals = {}
@@ -185,11 +220,10 @@ def b3b_provide_example(state: GraphState) -> dict:
         if customer.cccd:
             example_vals["cccd"] = customer.cccd
 
-    # Fill remaining with example placeholders
     example_defaults = {
-        "user_name": "Nguyen Thi Lan",
+        "user_name": "Nguyễn Thị Lan",
         "cccd": "001098765432",
-        "position": "Ke toan",
+        "position": "Kế toán",
         "role": "Maker",
         "limit": "500000000",
         "new_limit": "1000000000",
@@ -197,12 +231,12 @@ def b3b_provide_example(state: GraphState) -> dict:
         "phone": "0901234567",
         "email": "lan@company.vn",
         "digital_sign_required": "Yes",
-        "action_type": "thay doi",
+        "action_type": "thay đổi",
         "ds_provider": "Viettel-CA",
         "ds_serial": "VTCA-2024-001234",
         "ds_valid_to": "31/12/2026",
-        "approval_flow": "2 nguoi",
-        "approver_names": "Nguyen Van X (Maker); David Chen (Approver)",
+        "approval_flow": "2 người",
+        "approver_names": "Nguyễn Văn X (Maker); David Chen (Approver)",
         "effective_date": "01/10/2026",
         "current_limit": "500000000",
     }
@@ -215,66 +249,110 @@ def b3b_provide_example(state: GraphState) -> dict:
             elif f.options:
                 example_vals[f.key] = f.options[0]
             elif f.required:
-                example_vals[f.key] = f"[vi du: {f.label}]"
+                example_vals[f.key] = f"[ví dụ: {f.label}]"
             else:
                 example_vals[f.key] = ""
 
-    # Format example
     lines = []
-    lines.append("📋 **Mau gia lap (DEMO):**\n")
-    lines.append(f"Mau: {meta.code} — {meta.name}")
-    lines.append(f"Khach hang: {customer.name if customer else 'Demo'}\n")
-    lines.append("Thong tin dien:")
-    for f in tpl.fields:
-        if form_engine.is_secret(f.key):
-            continue
-        val = example_vals.get(f.key, "")
-        label = f.label
-        if f.label_en:
-            label = f"{f.label} / {f.label_en}"
-        lines.append(f"  {label}: {val}")
-
-    lines.append("\n⚠️ Day la ban nhap gia lap. Quy khach vui long dien thong tin that roi gui lai cho toi.")
-    lines.append("\n💡 Quy khach co the nhan theo dang:")
-    lines.append("  giatri1 | giatri2 | giatri3  (phan tach bang dau |)")
-    lines.append("\nKhi san sang, vui long cung cap thong tin hoac nhap 'san sang' de bat dau.")
+    if lang == "en":
+        lines.append("📋 **Mock example (DEMO):**\n")
+        lines.append(f"Form: {meta.code} — {meta.name}")
+        lines.append(f"Customer: {customer.name_en or customer.name if customer else 'Demo'}\n")
+        lines.append("Filled information:")
+        for f in tpl.fields:
+            if form_engine.is_secret(f.key):
+                continue
+            val = example_vals.get(f.key, "")
+            label = f.label_en or f.label
+            lines.append(f"  {label}: {val}")
+        lines.append("\n⚠️ This is a mock draft. Please fill in your real information and send it back.")
+        lines.append("\n💡 You can enter values separated by | :")
+        lines.append("  value1 | value2 | value3")
+        lines.append("\nWhen ready, please provide your information or type 'ready' to begin.")
+    else:
+        lines.append("📋 **Mẫu giả lập (DEMO):**\n")
+        lines.append(f"Mẫu: {meta.code} — {meta.name}")
+        lines.append(f"Khách hàng: {customer.name if customer else 'Demo'}\n")
+        lines.append("Thông tin điền:")
+        for f in tpl.fields:
+            if form_engine.is_secret(f.key):
+                continue
+            val = example_vals.get(f.key, "")
+            label = f.label
+            if f.label_en and meta.bilingual:
+                label = f"{f.label} / {f.label_en}"
+            lines.append(f"  {label}: {val}")
+        lines.append("\n⚠️ Đây là bản nháp giả lập. Quý khách vui lòng điền thông tin thật rồi gửi lại cho tôi.")
+        lines.append("\n💡 Quý khách có thể nhập theo dạng:")
+        lines.append("  giátrị1 | giátrị2 | giátrị3  (phân tách bằng dấu |)")
+        lines.append("\nKhi sẵn sàng, vui lòng cung cấp thông tin hoặc nhập \"sẵn sàng\" để bắt đầu.")
 
     example = "\n".join(lines)
     return {"conversation_phase": "example_shown", "example": example, "question": "\n\n".join([state.get("explanation", ""), example])}
 
 
-def _field_guidance(f) -> str:
-    """Generate human-friendly guidance for a form field."""
+def _field_guidance(f, lang: str = "vi") -> str:
+    """Generate human-friendly 1-line guidance for a form field."""
     v = (f.validation or "").lower()
+    if lang == "en":
+        if "mst_10" in v:
+            return "10 digits, e.g. 0101234567 — see Business Registration Certificate"
+        if "cccd_12" in v:
+            return "12 digits, e.g. 001098765432 — from ID card or passport"
+        if "phone_vn" in v:
+            return "Vietnamese phone, e.g. 0901234567"
+        if "email" in v:
+            return "Valid email, e.g. name@company.com"
+        if "msb_account" in v:
+            return "9–12 digits, e.g. 123456789999"
+        if f.type == "enum" and f.options:
+            return f"Choose: {', '.join(f.options)}"
+        if f.type == "date":
+            return "Format DD/MM/YYYY, e.g. 01/10/2026"
+        if f.type == "number":
+            return f"Number{' (' + f.note + ')' if f.note else ''}, e.g. 500000000"
+        if f.type == "bool":
+            return "Yes or No"
+        if "company_name_en" in f.key:
+            return "English company name from ERC/IRC"
+        if "nationality" in f.key:
+            return "Legal representative's nationality, e.g. Singapore"
+        if "passport" in f.key:
+            return "Passport number (for foreign nationals), e.g. S1234567A"
+        if "role" in f.key:
+            return "Maker (prepare) / Checker (review) / Approver (approve)"
+        if "legal_rep" in f.key:
+            return "From Business Registration Certificate"
+        return ""
+    # Vietnamese (có dấu)
     if "mst_10" in v:
-        return "Ma so thue, dung 10 chu so. Lay tu Giay chung nhan DKKD."
+        return "10 chữ số, ví dụ: 0101234567 — xem Giấy chứng nhận ĐKDN"
     if "cccd_12" in v:
-        return "CCCD/Ho chieu, dung 12 chu so. Lay tu CCCD hoac ho chieu."
+        return "12 chữ số, ví dụ: 001098765432 — từ thẻ CCCD hoặc hộ chiếu"
     if "phone_vn" in v:
-        return "So dien thoai VN, dinh dang 0XXXXXXXXX (10-11 chu so)."
+        return "Số điện thoại VN, ví dụ: 0901234567"
     if "email" in v:
-        return "Dia chi email hop le (vd: name@company.com)."
+        return "Email hợp lệ, ví dụ: name@company.com"
     if "msb_account" in v:
-        return "So tai khoan MSB, 9-12 chu so."
+        return "9–12 chữ số, ví dụ: 123456789999"
     if f.type == "enum" and f.options:
-        return f"Chon mot trong: {', '.join(f.options)}."
+        return f"Chọn: {', '.join(f.options)}"
     if f.type == "date":
-        return "Dinh dang DD/MM/YYYY."
+        return "Định dạng DD/MM/YYYY, ví dụ: 01/10/2026"
     if f.type == "number":
-        unit = f.note or ""
-        return f"Nhap so{' (' + unit + ')' if unit else ''}."
+        return f"Số{' (' + f.note + ')' if f.note else ''}, ví dụ: 500000000"
     if f.type == "bool":
-        return "Yes hoac No."
+        return "Yes hoặc No"
     if "company_name_en" in f.key:
-        return "Ten doanh nghiep bang tieng Anh, lay tu ERC/IRC."
+        return "Tên doanh nghiệp bằng tiếng Anh, lấy từ ERC/IRC"
     if "nationality" in f.key:
-        return "Quoc tich nguoi dai dien theo phap luat."
+        return "Quốc tịch người đại diện, ví dụ: Singapore"
     if "passport" in f.key:
-        return "So ho chieu nguoi dai dien (neu la nguoi nuoc ngoai)."
+        return "Số hộ chiếu (nếu người nước ngoài), ví dụ: S1234567A"
     if "role" in f.key:
-        return "Vai tro eBank: Maker (lap lenh) / Checker (kiem soat) / Approver (duyet)."
+        return "Maker (lập lệnh) / Checker (kiểm soát) / Approver (duyệt)"
     if "legal_rep" in f.key:
-        return "Nguoi dai dien theo phap luat, lay tu Giay phep DKKD."
+        return "Lấy từ Giấy phép ĐKKD"
     return ""
 
 
