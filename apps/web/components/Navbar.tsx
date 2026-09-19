@@ -33,6 +33,12 @@ export function Navbar({ active = "home" }: { active?: "home" | "forms" | "sign"
           >
             ✍️ Ký Số
           </Link>
+          <Link
+            href="/user-guide"
+            className="rounded-btn px-3 py-1.5 text-xs font-semibold text-white/60 transition hover:text-white hover:bg-white/10"
+          >
+            📖 Hướng dẫn
+          </Link>
           <span className="ml-2 hidden text-[11px] font-semibold tracking-wide text-white/40 sm:inline">
             AI FOR CUSTOMERS · MSB AI HACKATHON 2026
           </span>
