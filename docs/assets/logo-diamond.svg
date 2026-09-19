@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="MSB SmartForm AI">
+  <!-- Diamond mark — MSB red #E30613 (solid, per PPT design) -->
+  <path d="M100 10 L190 100 L100 190 L10 100 Z" fill="#E30613"/>
+  <!-- top facet subtle highlight -->
+  <path d="M100 10 L190 100 L100 100 Z" fill="#FFFFFF" fill-opacity="0.12"/>
+  <!-- inner diamond outline for depth -->
+  <path d="M100 28 L172 100 L100 172 L28 100 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="3"/>
+
+  <!-- Maritime anchor motif (white) — giữ tinh chất hàng hải MSB -->
+  <g stroke="#FFFFFF" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="100" cy="60" r="8"/>
+    <line x1="100" y1="68" x2="100" y2="132"/>
+    <line x1="83" y1="86" x2="117" y2="86"/>
+    <path d="M76 130 Q100 154 124 130"/>
+    <path d="M76 130 L71 119"/>
+    <path d="M124 130 L129 119"/>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+**/node_modules/
+**/.next/
+**/out/
+**/__pycache__/
+**/venv/
+**/.venv/
+*.pyc
+.opencode/skills/
+.agentbase/
+apps/agent/.agentbase/
+apps/agent/.env
+apps/agent/.greennode.json

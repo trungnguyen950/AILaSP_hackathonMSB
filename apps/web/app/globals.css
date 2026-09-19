@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --msb-red: #e30613;
+  --navy: #0b1f3a;
+}
+
+html,
+body {
+  background: #f8fafc;
+  color: #111827;
+  font-family: Inter, "Be Vietnam Pro", system-ui, sans-serif;
+}
+
+/* PPT-aligned: solid MSB red, navy header */
+.brand-bg { background: #e30613; }
+.navy-bg { background: #0b1f3a; }
+.brand-text { color: #e30613; }
+
+.chat-agent {
+  border-left: 3px solid var(--msb-red);
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid var(--msb-red);
+}
+.chat-user {
+  background: var(--msb-red);
+  color: #fff;
+}
+
+.missing-field {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+@keyframes pop {
+  0% { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-pop { animation: pop 0.25s ease-out; }
+
+@keyframes blink {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+.dot-typing span { animation: blink 1.2s infinite; }
+.dot-typing span:nth-child(2) { animation-delay: 0.2s; }
+.dot-typing span:nth-child(3) { animation-delay: 0.4s; }
+
+/* numbered step card like PPT */
+.step-num {
+  font-feature-settings: "tnum";
+}
+
+/* AI Fill gradient button */
+.ai-gradient {
+  background: linear-gradient(135deg, #7c3aed 0%, #2563eb 50%, #059669 100%);
+}
+.ai-gradient:hover {
+  background: linear-gradient(135deg, #6d28d9 0%, #1d4ed8 50%, #047857 100%);
+}
+
+@keyframes ai-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(124, 58, 237, 0); }
+}
+.ai-pulse { animation: ai-pulse 2s infinite; }
+
+/* Card hover lift */
+.card-lift {
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.card-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(11, 31, 58, 0.12);
+}
+
+/* Skeleton loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  backdrop-filter: blur(4px);
+}

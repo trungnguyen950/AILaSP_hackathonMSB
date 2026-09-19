@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 200" role="img" aria-label="MSB SmartForm AI">
+  <!-- Diamond mark — MSB red #E30613 -->
+  <g transform="translate(10,10)">
+    <path d="M90 0 L180 90 L90 180 L0 90 Z" fill="#E30613"/>
+    <path d="M90 0 L180 90 L90 90 Z" fill="#FFFFFF" fill-opacity="0.12"/>
+    <path d="M90 18 L162 90 L90 162 L18 90 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="3"/>
+    <g stroke="#FFFFFF" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="90" cy="50" r="8"/>
+      <line x1="90" y1="58" x2="90" y2="122"/>
+      <line x1="73" y1="76" x2="107" y2="76"/>
+      <path d="M66 120 Q90 144 114 120"/>
+      <path d="M66 120 L61 109"/>
+      <path d="M114 120 L119 109"/>
+    </g>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="215" y="92" font-family="Inter, 'Be Vietnam Pro', Arial, sans-serif" font-size="46" font-weight="800" fill="#0B1F3A">MSB</text>
+  <text x="318" y="92" font-family="Inter, 'Be Vietnam Pro', Arial, sans-serif" font-size="46" font-weight="700" fill="#E30613">SmartForm</text>
+  <text x="215" y="128" font-family="Inter, 'Be Vietnam Pro', Arial, sans-serif" font-size="26" font-weight="600" fill="#667085" letter-spacing="2">AI · TRỢ LÝ LẬP HỒ SƠ</text>
+</svg>

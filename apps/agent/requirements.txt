@@ -1,0 +1,8 @@
+greennode-agentbase
+greennode-agent-bridge[langgraph]
+langgraph>=1.0.0,<2.0.0
+langchain-openai>=1.1.0,<2.0.0
+python-dotenv
+pydantic>=2.0.0
+fpdf2>=2.8.0,<3.0.0
+pypdf>=4.0.0,<5.0.0

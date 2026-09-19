@@ -1,0 +1,24 @@
+services:
+  agent:
+    build: ./apps/agent
+    ports:
+      - "8080:8080"
+    environment:
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://maas-llm-aiplatform-hcm.api.vngcloud.vn/v1}
+      - LLM_MODEL=${LLM_MODEL:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build: ./apps/web
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_AGENT_URL=http://agent:8080
+    depends_on:
+      agent:
+        condition: service_healthy

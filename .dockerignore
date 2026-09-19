@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+**/out
+**/.git
+**/__pycache__
+**/venv
+**/.venv
+.opencode
+docs
+knowledge-base
+*.md
+.gitignore
