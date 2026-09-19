@@ -72,6 +72,9 @@ class GraphState(TypedDict, total=False):
     question: Optional[str]
     output: Optional[dict]
     violations: list[str]
+    conversation_phase: str
+    explanation: Optional[str]
+    example: Optional[str]
 
 
 def _template(code: Optional[str]) -> Optional[FormTemplate]:
@@ -83,7 +86,7 @@ def b1_identify(state: GraphState) -> dict:
     msg = state.get("message", "")
     customer = match_demo_customer(msg)
     if not customer:
-        customer = DEMO_CUSTOMERS[0]  # demo default
+        customer = state.get("customer") or DEMO_CUSTOMERS[0]
     return {"customer": customer}
 
 
@@ -107,6 +110,172 @@ def b3_find_form(state: GraphState) -> dict:
     if not forms:
         return {"not_found": True, "selected_code": None}
     return {"not_found": False, "selected_code": forms[0].code}
+
+
+# --- Guided flow: explain form fields ---
+def b3a_explain_form(state: GraphState) -> dict:
+    """Explain the selected form: name, purpose, each field with guidance."""
+    tpl = _template(state.get("selected_code"))
+    if not tpl:
+        return {"conversation_phase": "collecting"}
+    meta = tpl.meta
+    customer = state.get("customer")
+
+    lines = []
+    # Greeting
+    lines.append(f"Cam on quy khach da lien he MSB SmartForm AI.\n")
+    # Form identification
+    bilingual_note = " (song ngu VI-EN)" if meta.bilingual else ""
+    lines.append(f"📋 **Mau bieu mau phu hop:** {meta.code} — {meta.name}{bilingual_note}")
+    lines.append(f"   Muc dich: {meta.use_case}\n")
+    # Customer type
+    if customer:
+        ctype = "Doanh nghiep FDI" if customer.is_fdi else ("Doanh nghiep" if customer.type == "org" else "Ca nhan")
+        lines.append(f"👤 Loai khach hang: {ctype}")
+    lines.append("")
+
+    # Field explanations
+    lines.append("📝 **Cac truong can dien:**")
+    for i, f in enumerate(tpl.fields, 1):
+        if form_engine.is_secret(f.key):
+            continue
+        label = f.label
+        if f.label_en:
+            label = f"{f.label} / {f.label_en}"
+        req = "*" if f.required else " (tu chon)"
+        lines.append(f"\n  {i}. {label}{req}")
+        guidance = _field_guidance(f)
+        if guidance:
+            lines.append(f"     → {guidance}")
+
+    lines.append(f"\n📄 Ho so kem theo: {', '.join(meta.accompanying_docs)}")
+    lines.append(f"✍️ Nguoi ky: {meta.signer}")
+
+    explanation = "\n".join(lines)
+    return {"conversation_phase": "explaining", "explanation": explanation}
+
+
+def b3b_provide_example(state: GraphState) -> dict:
+    """Generate a mock example with pre-filled data for the customer to see."""
+    tpl = _template(state.get("selected_code"))
+    if not tpl:
+        return {"conversation_phase": "collecting"}
+    customer = state.get("customer")
+    meta = tpl.meta
+
+    # Build example values
+    example_vals = {}
+    if customer:
+        if customer.name:
+            example_vals["company_name"] = customer.name
+            example_vals["customer_name"] = customer.name
+        if customer.name_en:
+            example_vals["company_name_en"] = customer.name_en
+        if customer.tax_id:
+            example_vals["tax_id"] = customer.tax_id
+            example_vals["tax_id_or_cccd"] = customer.tax_id
+        if customer.account_no:
+            example_vals["account_no"] = customer.account_no
+        if customer.legal_rep:
+            example_vals["legal_rep"] = customer.legal_rep
+        if customer.legal_rep_nationality:
+            example_vals["legal_rep_nationality"] = customer.legal_rep_nationality
+        if customer.legal_rep_passport:
+            example_vals["legal_rep_passport"] = customer.legal_rep_passport
+        if customer.cccd:
+            example_vals["cccd"] = customer.cccd
+
+    # Fill remaining with example placeholders
+    example_defaults = {
+        "user_name": "Nguyen Thi Lan",
+        "cccd": "001098765432",
+        "position": "Ke toan",
+        "role": "Maker",
+        "limit": "500000000",
+        "new_limit": "1000000000",
+        "auth_method": "OTP",
+        "phone": "0901234567",
+        "email": "lan@company.vn",
+        "digital_sign_required": "Yes",
+        "action_type": "thay doi",
+        "ds_provider": "Viettel-CA",
+        "ds_serial": "VTCA-2024-001234",
+        "ds_valid_to": "31/12/2026",
+        "approval_flow": "2 nguoi",
+        "approver_names": "Nguyen Van X (Maker); David Chen (Approver)",
+        "effective_date": "01/10/2026",
+        "current_limit": "500000000",
+    }
+    for f in tpl.fields:
+        if form_engine.is_secret(f.key):
+            continue
+        if f.key not in example_vals:
+            if f.key in example_defaults:
+                example_vals[f.key] = example_defaults[f.key]
+            elif f.options:
+                example_vals[f.key] = f.options[0]
+            elif f.required:
+                example_vals[f.key] = f"[vi du: {f.label}]"
+            else:
+                example_vals[f.key] = ""
+
+    # Format example
+    lines = []
+    lines.append("📋 **Mau gia lap (DEMO):**\n")
+    lines.append(f"Mau: {meta.code} — {meta.name}")
+    lines.append(f"Khach hang: {customer.name if customer else 'Demo'}\n")
+    lines.append("Thong tin dien:")
+    for f in tpl.fields:
+        if form_engine.is_secret(f.key):
+            continue
+        val = example_vals.get(f.key, "")
+        label = f.label
+        if f.label_en:
+            label = f"{f.label} / {f.label_en}"
+        lines.append(f"  {label}: {val}")
+
+    lines.append("\n⚠️ Day la ban nhap gia lap. Quy khach vui long dien thong tin that roi gui lai cho toi.")
+    lines.append("\n💡 Quy khach co the nhan theo dang:")
+    lines.append("  giatri1 | giatri2 | giatri3  (phan tach bang dau |)")
+    lines.append("\nKhi san sang, vui long cung cap thong tin hoac nhap 'san sang' de bat dau.")
+
+    example = "\n".join(lines)
+    return {"conversation_phase": "example_shown", "example": example, "question": "\n\n".join([state.get("explanation", ""), example])}
+
+
+def _field_guidance(f) -> str:
+    """Generate human-friendly guidance for a form field."""
+    v = (f.validation or "").lower()
+    if "mst_10" in v:
+        return "Ma so thue, dung 10 chu so. Lay tu Giay chung nhan DKKD."
+    if "cccd_12" in v:
+        return "CCCD/Ho chieu, dung 12 chu so. Lay tu CCCD hoac ho chieu."
+    if "phone_vn" in v:
+        return "So dien thoai VN, dinh dang 0XXXXXXXXX (10-11 chu so)."
+    if "email" in v:
+        return "Dia chi email hop le (vd: name@company.com)."
+    if "msb_account" in v:
+        return "So tai khoan MSB, 9-12 chu so."
+    if f.type == "enum" and f.options:
+        return f"Chon mot trong: {', '.join(f.options)}."
+    if f.type == "date":
+        return "Dinh dang DD/MM/YYYY."
+    if f.type == "number":
+        unit = f.note or ""
+        return f"Nhap so{' (' + unit + ')' if unit else ''}."
+    if f.type == "bool":
+        return "Yes hoac No."
+    if "company_name_en" in f.key:
+        return "Ten doanh nghiep bang tieng Anh, lay tu ERC/IRC."
+    if "nationality" in f.key:
+        return "Quoc tich nguoi dai dien theo phap luat."
+    if "passport" in f.key:
+        return "So ho chieu nguoi dai dien (neu la nguoi nuoc ngoai)."
+    if "role" in f.key:
+        return "Vai tro eBank: Maker (lap lenh) / Checker (kiem soat) / Approver (duyet)."
+    if "legal_rep" in f.key:
+        return "Nguoi dai dien theo phap luat, lay tu Giay phep DKKD."
+    return ""
 
 
 def b4_missing(state: GraphState) -> dict:
@@ -345,6 +514,8 @@ builder = StateGraph(GraphState)
 builder.add_node("b1_identify", b1_identify)
 builder.add_node("b2_classify", b2_classify)
 builder.add_node("b3_find_form", b3_find_form)
+builder.add_node("b3a_explain_form", b3a_explain_form)
+builder.add_node("b3b_provide_example", b3b_provide_example)
 builder.add_node("b4_missing", b4_missing)
 builder.add_node("b5_fill", b5_fill)
 builder.add_node("b6_logic", b6_logic)
@@ -356,8 +527,10 @@ builder.add_edge("b1_identify", "b2_classify")
 builder.add_edge("b2_classify", "b3_find_form")
 builder.add_conditional_edges(
     "b3_find_form",
-    lambda s: END if s.get("not_found") else "b4_missing",
+    lambda s: END if s.get("not_found") else ("b3a_explain_form" if s.get("conversation_phase") != "collecting" else "b4_missing"),
 )
+builder.add_edge("b3a_explain_form", "b3b_provide_example")
+builder.add_edge("b3b_provide_example", END)
 builder.add_conditional_edges(
     "b4_missing",
     lambda s: END if s.get("missing") else "b5_fill",
@@ -375,12 +548,32 @@ _SESSIONS: dict[str, AgentState] = {}
 
 
 def run(session_id: str, message: str) -> dict:
-    """Process a user message through the 8-step FSM. Returns response dict."""
+    """Process a user message through the guided FSM. Returns response dict."""
     state = _SESSIONS.get(session_id, AgentState(session_id=session_id))
     state.messages.append({"role": "user", "content": message})
     state.soan_ho_so = message.strip().upper() == "SOẠN HỒ SƠ" or message.strip().upper() == "SOAN HO SO"
 
     existing_code = state.selected_forms[0].code if state.selected_forms else None
+
+    # Determine conversation phase routing
+    msg_lower = message.strip().lower()
+    is_ready = msg_lower in ("san sang", "sẵn sàng", "ready", "ok", "yes", "co", "có", "bat dau", "bắt đầu")
+    is_providing_data = "|" in message or _looks_like_data(message)
+    current_phase = state.conversation_phase
+
+    # If customer is in example_shown phase and says ready or provides data → go to collecting
+    if current_phase == "example_shown" and (is_ready or is_providing_data):
+        conversation_phase = "collecting"
+    elif current_phase == "example_shown":
+        # Customer is asking a question, not providing data — re-explain
+        return {
+            "status": "EXPLAINING",
+            "question": "Toi hieu quy khach con thac mac. Quy khach co the xem lai huong dan ben tren.\n\nKhi san sang, vui long cung cap thong tin theo dang:\n  giatri1 | giatri2 | giatri3\n\nHoac nhap 'san sang' de bat dau thu thap thong tin.",
+            "selected_form": (KB.get(existing_code).meta.model_dump() if existing_code and KB.get(existing_code) else None),
+            "session_id": session_id,
+        }
+    else:
+        conversation_phase = current_phase if current_phase == "collecting" else "init"
 
     init: GraphState = {
         "message": message,
@@ -389,6 +582,7 @@ def run(session_id: str, message: str) -> dict:
         "selected_code": existing_code,
         "intents": list(state.intents),
         "prev_missing": list(state.missing),
+        "conversation_phase": conversation_phase,
     }
     result = graph.invoke(init)
 
@@ -409,6 +603,7 @@ def run(session_id: str, message: str) -> dict:
     state.last_question = result.get("question")
     state.output = result.get("output")
     state.not_found = result.get("not_found", False)
+    state.conversation_phase = result.get("conversation_phase", conversation_phase)
     _SESSIONS[session_id] = state
 
     # response
@@ -418,6 +613,18 @@ def run(session_id: str, message: str) -> dict:
             "message": "Chưa xác định được mẫu biểu MSB tương ứng trong thư viện hiện có. Cần chuyên viên MSB xác nhận trước khi lập hồ sơ.",
             "session_id": session_id,
         }
+
+    # Guided flow: explanation + example
+    if state.conversation_phase == "example_shown" and result.get("question"):
+        return {
+            "status": "FORM EXPLAINED",
+            "question": result["question"],
+            "selected_form": (KB.get(code).meta.model_dump() if code and KB.get(code) else None),
+            "explanation": result.get("explanation"),
+            "example": result.get("example"),
+            "session_id": session_id,
+        }
+
     if state.last_question:
         return {
             "status": "MISSING INFORMATION",
@@ -438,6 +645,24 @@ def run(session_id: str, message: str) -> dict:
         "file": file_info,
         "session_id": session_id,
     }
+
+
+def _looks_like_data(text: str) -> bool:
+    """Heuristic: does this message look like the user is providing form data?"""
+    import re
+    # Contains pipe-separated values
+    if "|" in text:
+        return True
+    # Contains a 10-digit number (MST) or 12-digit (CCCD)
+    if re.search(r"\b\d{10}\b", text) or re.search(r"\b\d{12}\b", text):
+        return True
+    # Contains email
+    if re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", text):
+        return True
+    # Contains phone number
+    if re.search(r"\b0\d{9,10}\b", text):
+        return True
+    return False
 
 
 def get_state(session_id: str) -> AgentState | None:

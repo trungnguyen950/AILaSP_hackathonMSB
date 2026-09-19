@@ -98,3 +98,4 @@ class AgentState(BaseModel):
     output: Optional[dict] = None
     not_found: bool = False
     soan_ho_so: bool = False
+    conversation_phase: str = "init"  # init → greeting → explaining → example_shown → collecting → complete
