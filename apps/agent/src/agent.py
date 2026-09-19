@@ -643,10 +643,32 @@ def run(session_id: str, message: str) -> dict:
     if current_phase == "example_shown" and (is_ready or is_providing_data):
         conversation_phase = "collecting"
     elif current_phase == "example_shown":
-        # Customer is asking a question, not providing data — re-explain
+        # Customer is asking a question, not providing data — re-explain with demo values
+        tpl = KB.get(existing_code) if existing_code else None
+        demo_hint = ""
+        if tpl:
+            demo_vals = []
+            customer = state.customer
+            for f in tpl.fields:
+                if form_engine.is_secret(f.key) or not f.required:
+                    continue
+                val = state.collected.get(f.key, "")
+                if not val and customer:
+                    val = _prefill_customer(customer, {}).get(f.key, "")
+                if not val:
+                    defaults = {
+                        "user_name": "Nguyễn Thị Lan", "cccd": "001098765432", "position": "Kế toán",
+                        "role": "Maker", "auth_method": "OTP", "phone": "0901234567",
+                        "email": "lan@company.vn", "limit": "500000000",
+                    }
+                    val = defaults.get(f.key, "")
+                if val:
+                    demo_vals.append(val)
+            if demo_vals:
+                demo_hint = "\n\n💡 Ví dụ điền nhanh:\n  " + " | ".join(demo_vals[:7])
         return {
             "status": "EXPLAINING",
-            "question": "Toi hieu quy khach con thac mac. Quy khach co the xem lai huong dan ben tren.\n\nKhi san sang, vui long cung cap thong tin theo dang:\n  giatri1 | giatri2 | giatri3\n\nHoac nhap 'san sang' de bat dau thu thap thong tin.",
+            "question": f"Tôi hiểu Quý khách còn thắc mắc. Quý khách có thể xem lại hướng dẫn bên trên.{demo_hint}\n\nKhi sẵn sàng, vui lòng cung cấp thông tin theo dạng:\n  giátrị1 | giátrị2 | giátrị3  (phân tách bằng dấu |)\n\nHoặc nhập \"sẵn sàng\" để bắt đầu thu thập thông tin.",
             "selected_form": (KB.get(existing_code).meta.model_dump() if existing_code and KB.get(existing_code) else None),
             "session_id": session_id,
         }
