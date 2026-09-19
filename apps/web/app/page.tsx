@@ -51,6 +51,7 @@ function PageContent() {
   const [error, setError] = useState("");
   const [fileInfo, setFileInfo] = useState<{ filename: string; content: string; mime: string } | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [sessionId, setSessionId] = useState(`web-${Date.now()}`);
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const searchParams = useSearchParams();
@@ -67,14 +68,15 @@ function PageContent() {
     }
   }, [searchParams, loading]);
 
-  async function send(text?: string) {
+  async function send(text?: string, sid?: string) {
     const msg = (text ?? input).trim();
     if (!msg || loading) return;
+    const useSid = sid || sessionId;
     setInput(""); setError("");
     setMessages((m) => [...m, { role: "user", content: msg }]);
     setLoading(true);
     try {
-      const res = await invoke("chat", { message: msg });
+      const res = await invoke("chat", { message: msg, session_id: useSid });
       handle(res);
     } catch (e: any) {
       setError(e.message || "Lỗi kết nối Agent.");
@@ -113,7 +115,7 @@ function PageContent() {
     setLoading(true); setError("");
     setMessages((m) => [...m, { role: "user", content: "SOẠN HỒ SƠ" }]);
     try {
-      const res = await invoke("soan_ho_so");
+      const res = await invoke("soan_ho_so", { session_id: sessionId });
       if (res.checklist) setChecklist(res.checklist);
       if (res.status) setStatus(res.status);
       if (res.file) setFileInfo(res.file);
@@ -155,6 +157,37 @@ function PageContent() {
     }
   }
 
+  function resetAll() {
+    invoke("reset_session", { session_id: sessionId }).catch(() => {});
+    const newSid = `web-${Date.now()}`;
+    setSessionId(newSid);
+    setMessages([
+      { role: "agent", content: "Chào bạn! Tôi là MSB SmartForm AI — trợ lý lập hồ sơ & biểu mẫu. Hãy mô tả nhu cầu, hoặc bấm nút demo bên dưới." },
+    ]);
+    setForm(null);
+    setStatus("");
+    setChecklist([]);
+    setOutput(null);
+    setFileInfo(null);
+    setError("");
+    setInput("");
+  }
+
+  function startPersona(prompt: string) {
+    const newSid = `persona-${Date.now()}`;
+    setSessionId(newSid);
+    setMessages([
+      { role: "agent", content: "Chào bạn! Tôi là MSB SmartForm AI — trợ lý lập hồ sơ & biểu mẫu. Hãy mô tả nhu cầu, hoặc bấm nút demo bên dưới." },
+    ]);
+    setForm(null);
+    setStatus("");
+    setChecklist([]);
+    setOutput(null);
+    setFileInfo(null);
+    setError("");
+    send(prompt, newSid);
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-ink-50">
       <Navbar active="home" />
@@ -180,7 +213,7 @@ function PageContent() {
           {PERSONAS.map((p) => (
             <button
               key={p.tag}
-              onClick={() => p.prompt && send(p.prompt)}
+              onClick={() => p.prompt && startPersona(p.prompt)}
               className={`flex shrink-0 items-center gap-2 rounded-btn border px-3 py-1.5 text-left text-xs transition ${
                 p.main ? "border-brand bg-brand-50 hover:bg-brand-100"
                 : p.fdi ? "border-purple-300 bg-purple-50 hover:bg-purple-100"
@@ -305,10 +338,16 @@ function PageContent() {
             </div>
           )}
           {form && (
-            <button
-              className="brand-bg w-full rounded-btn px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
-              onClick={soanHoSo} disabled={loading}
-            >SOẠN HỒ SƠ</button>
+            <div className="space-y-2">
+              <button
+                className="brand-bg w-full rounded-btn px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+                onClick={soanHoSo} disabled={loading}
+              >SOẠN HỒ SƠ</button>
+              <button
+                className="w-full rounded-btn border border-status-danger bg-white px-4 py-2.5 text-sm font-semibold text-status-danger transition hover:bg-status-dangerBg disabled:opacity-50"
+                onClick={resetAll} disabled={loading}
+              >↻ Xoá thông tin cũ, thực hiện lại</button>
+            </div>
           )}
         </aside>
       </div>

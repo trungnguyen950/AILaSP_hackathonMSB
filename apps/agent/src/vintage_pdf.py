@@ -331,77 +331,129 @@ def _draw_fields(pdf: VintagePDF, fields: dict, signatories: list, accompanying:
 
 
 def _draw_signature_area(pdf: VintagePDF, signature_image_b64: str | None = None, mock_cert: dict | None = None):
-    """Khu vực chữ ký & con dấu — cuối văn bản."""
-    if pdf.get_y() > pdf.h - 65:
+    """Khu vực chữ ký & con dấu — cuối văn bản.
+
+    Bố cục 2 cột đối xứng: trái = Khách hàng, phải = Đại diện MSB.
+    Hai cột nằm cùng trang, căn chỉnh thẳng hàng, cùng lề trên & dưới.
+    """
+    # ── Tính trước chiều cao khối chữ ký để đảm bảo đủ chỗ ──
+    SIG_BOX_H = 38      # khoảng trắng cho chữ ký (image hoặc rỗng)
+    LABEL_H = 6          # dòng nhãn cột
+    LINE_GAP = 1.5       # khe giữa đường kẻ & chú thích
+    CAPTION_H = 4        # dòng chú thích
+    CERT_LINES = 3 if mock_cert else 0
+    CERT_H = CERT_LINES * 4.5 + 6   # khối chứng thư + khe
+    SIGNET_H = 14
+    SECTION_H = 7 + 3    # heading + khe
+    total_h = SECTION_H + LABEL_H + SIG_BOX_H + LINE_GAP + CAPTION_H + CERT_H + SIGNET_H + 8
+
+    # Nếu không đủ chỗ → sang trang mới
+    if pdf.get_y() + total_h > pdf.h - 22:
         pdf.add_page()
         pdf.draw_border_frame()
+
     pdf.ln(4)
     pdf.section_heading("CHỮ KÝ & CON DẤU")
 
-    # Tạo 2 cột: trái = khách hàng, phải = đại diện MSB
+    # ── Tạo 2 cột đối xứng ──
     col_top = pdf.get_y()
-    left_x, right_x = 25, pdf.w / 2 + 5
+    left_x = 25
+    right_x = pdf.w / 2 + 5
     col_w = pdf.w / 2 - 30
 
-    # Cột trái — chữ ký khách hàng (embed image nếu có)
-    pdf.set_xy(left_x, col_top)
+    # Tắt auto page break tạm thời để không bị ngắt giữa khối
+    prev_auto = pdf.auto_page_break
+    pdf.set_auto_page_break(auto=False)
+
+    # ── Cột trái: Khách hàng / Người lập ──
+    y = col_top
+    # Nhãn cột
+    pdf.set_xy(left_x, y)
     pdf.use_font("label", 9, "B")
     pdf.set_text_color(*_c("sepia"))
-    pdf.cell(col_w, 6, text=pdf._txt("Khách hàng / Người lập"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(col_w, LABEL_H, text=pdf._txt("Khách hàng / Người lập"), align="L")
+    y += LABEL_H
 
+    # Vùng chữ ký (image hoặc khoảng trắng)
+    sig_box_top = y + 2
     if signature_image_b64:
         try:
             raw = signature_image_b64.split(",", 1)[-1] if "," in signature_image_b64 else signature_image_b64
             sig_bytes = base64.b64decode(raw)
+            img_w = min(60, col_w - 10)
             img_h = 28
-            pdf.image(io.BytesIO(sig_bytes), x=left_x + 5, y=pdf.get_y() + 2, w=60, h=img_h)
-            pdf.set_y(pdf.get_y() + img_h + 4)
+            # Căn giữa cột
+            img_x = left_x + (col_w - img_w) / 2
+            pdf.image(io.BytesIO(sig_bytes), x=img_x, y=sig_box_top, w=img_w, h=img_h)
         except Exception as e:
+            pdf.set_xy(left_x, sig_box_top)
             pdf.use_font("small", 8, "I")
             pdf.set_text_color(*_c("muted"))
-            pdf.cell(col_w, 5, text=pdf._txt(f"[Chữ ký: {e}]"), new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(20)
-    else:
-        # Khung chữ ký rỗng (dấu chấm X)
-        pdf.ln(22)
+            pdf.multi_cell(col_w, 5, text=pdf._txt(f"[Lỗi ảnh chữ ký: {e}]"))
+    y += SIG_BOX_H
 
     # Đường kẻ chữ ký
-    pdf.set_x(left_x)
     pdf.set_draw_color(*_c("ink"))
     pdf.set_line_width(0.4)
-    pdf.line(left_x, pdf.get_y(), left_x + col_w - 5, pdf.get_y())
-    pdf.ln(1.5)
+    pdf.line(left_x, y, left_x + col_w, y)
+    y += LINE_GAP
+
+    # Chú thích
+    pdf.set_xy(left_x, y)
     pdf.use_font("small", 8, "I")
     pdf.set_text_color(*_c("muted"))
-    pdf.set_x(left_x)
-    pdf.cell(col_w, 4, text=pdf._txt("(Ký, ghi rõ họ tên và đóng dấu)"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(col_w, CAPTION_H, text=pdf._txt("(Ký, ghi rõ họ tên và đóng dấu)"), align="C")
+    left_bottom = y + CAPTION_H
 
-    # Cột phải — đại diện MSB
-    pdf.set_xy(right_x, col_top)
+    # ── Cột phải: Đại diện MSB ── (cùng cấu trúc, cùng toạ độ Y → thẳng hàng)
+    y = col_top
+    # Nhãn cột
+    pdf.set_xy(right_x, y)
     pdf.use_font("label", 9, "B")
     pdf.set_text_color(*_c("sepia"))
-    pdf.cell(col_w, 6, text=pdf._txt("Đại diện MSB"), new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(24)
-    pdf.set_x(right_x)
+    pdf.cell(col_w, LABEL_H, text=pdf._txt("Đại diện MSB"), align="L")
+    y += LABEL_H
+
+    # Vùng chữ ký rỗng (khung mờ cho MSB ký)
+    pdf.set_draw_color(*_c("shadow"))
+    pdf.set_line_width(0.2)
+    pdf.rect(right_x + 2, y + 2, col_w - 4, SIG_BOX_H - 4, style="D")
+    y += SIG_BOX_H
+
+    # Đường kẻ chữ ký
     pdf.set_draw_color(*_c("ink"))
     pdf.set_line_width(0.4)
-    pdf.line(right_x, pdf.get_y(), right_x + col_w - 5, pdf.get_y())
-    pdf.ln(1.5)
+    pdf.line(right_x, y, right_x + col_w, y)
+    y += LINE_GAP
+
+    # Chú thích
+    pdf.set_xy(right_x, y)
     pdf.use_font("small", 8, "I")
     pdf.set_text_color(*_c("muted"))
-    pdf.set_x(right_x)
-    pdf.cell(col_w, 4, text=pdf._txt("(Ký, ghi rõ họ tên)"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(col_w, CAPTION_H, text=pdf._txt("(Ký, ghi rõ họ tên)"), align="C")
+    right_bottom = y + CAPTION_H
 
+    # ── Đặt con trỏ Y về đáy sâu hơn của 2 cột ──
+    pdf.set_xy(20, max(left_bottom, right_bottom))
+
+    # Bật lại auto page break
+    pdf.set_auto_page_break(auto=prev_auto, margin=22)
     pdf.ln(6)
 
-    # Thông tin chứng thư số (nếu có)
+    # ── Thông tin chứng thư số (nếu có) — trải rộng 2 cột ──
     if mock_cert:
+        # Đường kẻ phân cách nhạt
+        pdf.set_draw_color(*_c("shadow"))
+        pdf.set_line_width(0.15)
+        pdf.line(20, pdf.get_y(), pdf.w - 20, pdf.get_y())
+        pdf.ln(2)
+
         pdf.use_font("small", 8, "")
         pdf.set_text_color(*_c("muted"))
         cert_id = mock_cert.get("certId", "N/A")
         subject = mock_cert.get("subject", "N/A")
         issuer = mock_cert.get("issuer", "N/A")
-        valid = f"{mock_cert.get('validFrom', '')} ÷ {mock_cert.get('validTo', '')}"
+        valid = f"{mock_cert.get('validFrom', '')} — {mock_cert.get('validTo', '')}"
         ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         info_lines = [
             f"Chứng thư số: {cert_id}  ·  Cấp bởi: {issuer}",
@@ -411,8 +463,10 @@ def _draw_signature_area(pdf: VintagePDF, signature_image_b64: str | None = None
         for line in info_lines:
             pdf.cell(0, 4.5, text=pdf._txt(line), new_x="LMARGIN", new_y="NEXT")
 
-    # Dấu triện / signet cách điệu ở góc phải
-    pdf.draw_signet(pdf.w - 28, pdf.get_y() + 4, r=7)
+    # ── Dấu triện / signet cách điệu — căn phải, cùng dòng với chứng thư ──
+    signet_y = pdf.get_y() + 3
+    if signet_y + 7 < pdf.h - 22:
+        pdf.draw_signet(pdf.w - 28, signet_y, r=7)
 
 
 def _finalize(pdf: VintagePDF) -> bytes:
