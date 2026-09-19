@@ -19,16 +19,13 @@ const STEPS = [
 ];
 
 const PERSONAS = [
-  { tag: "CTCP X", d: "Thêm kế toán · Maker + Approver" },
-  { tag: "TNHH MTV Y", d: "Thay Giám đốc & người đại diện" },
-  { tag: "TNHH 2TV Z", d: "Thuế điện tử + chữ ký số", main: true },
-  { tag: "DNTN A", d: "Ủy quyền kế toán eBank" },
-  { tag: "FDI Alpha 🌐", d: "Bilingual VI/EN · eBank + Maker/Approver", fdi: true },
-  { tag: "Cá nhân A", d: "Đổi SĐT, email & eBank" },
+  { tag: "CTCP X", d: "Thêm kế toán · Maker + Approver", prompt: "Công ty CP X muốn thêm kế toán vào eBank, kế toán lập lệnh, giám đốc duyệt" },
+  { tag: "TNHH MTV Y", d: "Thay Giám đốc & người đại diện", prompt: "Công ty TNHH một thành viên Y muốn thay đổi người đại diện theo pháp luật và cập nhật thông tin tài khoản" },
+  { tag: "TNHH 2TV Z", d: "Thuế điện tử + chữ ký số", prompt: "Công ty TNHH hai thành viên trở lên Z muốn đăng ký tài khoản MSB để nộp thuế điện tử và đăng ký chữ ký số Viettel-CA", main: true },
+  { tag: "DNTN A", d: "Ủy quyền kế toán eBank", prompt: "DNTN A muốn ủy quyền cho kế toán sử dụng eBank để lập lệnh thanh toán" },
+  { tag: "FDI Alpha 🌐", d: "Bilingual VI/EN · eBank + Maker/Approver", prompt: "Our company, Alpha Vietnam FDI Company Limited, has just opened an account with MSB. I would like our Vietnamese accountant to prepare payments, while I remain the final approver. Please prepare the required bilingual forms.", fdi: true },
+  { tag: "Cá nhân A", d: "Đổi SĐT, email & eBank", prompt: "Cá nhân A muốn đổi số điện thoại và email đăng ký tài khoản MSB" },
 ];
-
-const DEMO_PROMPT =
-  "Công ty TNHH hai thành viên trở lên Z muốn đăng ký tài khoản MSB để nộp thuế điện tử và đăng ký chữ ký số Viettel-CA.";
 
 const FDI_PROMPT =
   "Our company, Alpha Vietnam FDI Company Limited, has just opened an account with MSB. I would like our Vietnamese accountant to prepare payments, while I remain the final approver. Please prepare the required bilingual forms.";
@@ -183,10 +180,7 @@ function PageContent() {
           {PERSONAS.map((p) => (
             <button
               key={p.tag}
-              onClick={() => {
-                if (p.main) send(DEMO_PROMPT);
-                else if (p.fdi) send(FDI_PROMPT);
-              }}
+              onClick={() => p.prompt && send(p.prompt)}
               className={`flex shrink-0 items-center gap-2 rounded-btn border px-3 py-1.5 text-left text-xs transition ${
                 p.main ? "border-brand bg-brand-50 hover:bg-brand-100"
                 : p.fdi ? "border-purple-300 bg-purple-50 hover:bg-purple-100"

@@ -437,7 +437,6 @@ def generate_vintage_pdf(doc: dict) -> bytes:
         watermark=doc.get("watermark") or "MSB",
     )
     pdf.add_page()
-    pdf.draw_border_frame()
     _draw_header_block(pdf, doc)
     _draw_fields(
         pdf,

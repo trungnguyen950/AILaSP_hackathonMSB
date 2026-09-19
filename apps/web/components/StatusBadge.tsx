@@ -3,6 +3,8 @@ export function StatusBadge({ status }: { status: string }) {
     READY: { bg: "bg-status-readyBg", text: "text-status-ready", label: "READY" },
     "MISSING INFORMATION": { bg: "bg-status-missingBg", text: "text-status-missing", label: "MISSING INFORMATION" },
     "NEED MSB REVIEW": { bg: "bg-status-reviewBg", text: "text-status-review", label: "NEED MSB REVIEW" },
+    "FORM EXPLAINED": { bg: "bg-navy-50", text: "text-navy-900", label: "FORM EXPLAINED" },
+    EXPLAINING: { bg: "bg-navy-50", text: "text-navy-900", label: "EXPLAINING" },
   };
   const s = map[status] || { bg: "bg-ink-100", text: "text-ink-700", label: status };
   return (
