@@ -17,6 +17,7 @@ The /invocations endpoint dispatches by `action` (many logical REST paths):
 from __future__ import annotations
 
 import base64
+import os
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -355,6 +356,108 @@ def handler(payload: dict, context: RequestContext) -> dict:
             "timestamp": ts,
         }
 
+    # --- Zalo Bot: getMe (kiểm tra token) ---
+    if action == "zalo_get_me":
+        from src.zalo_bot import get_bot_token, get_me
+        token = get_bot_token()
+        if not token:
+            return {"status": "error", "error": "NO_ZALO_TOKEN", "message": "Thiếu ZALO_BOT_TOKEN env var hoặc AgentBase auth provider 'zalo-bot-token'."}
+        return {"status": "success", "bot": get_me(token), "timestamp": ts}
+
+    # --- Zalo Bot: setWebhook ---
+    if action == "zalo_set_webhook":
+        from src.zalo_bot import get_bot_token, set_webhook
+        token = get_bot_token()
+        if not token:
+            return {"status": "error", "error": "NO_ZALO_TOKEN", "message": "Thiếu ZALO_BOT_TOKEN."}
+        webhook_url = payload.get("url", "")
+        secret = payload.get("secret_token") or os.environ.get("ZALO_WEBHOOK_SECRET", "")
+        if not webhook_url:
+            return {"status": "error", "error": "NO_URL", "message": "Truyền url webhook (HTTPS, public)."}
+        if not secret:
+            return {"status": "error", "error": "NO_SECRET", "message": "Truyền secret_token hoặc cấu hình ZALO_WEBHOOK_SECRET."}
+        return {"status": "success", "result": set_webhook(token, webhook_url, secret), "timestamp": ts}
+
+    # --- Zalo Bot: getWebhookInfo ---
+    if action == "zalo_get_webhook_info":
+        from src.zalo_bot import get_bot_token, get_webhook_info
+        token = get_bot_token()
+        if not token:
+            return {"status": "error", "error": "NO_ZALO_TOKEN", "message": "Thiếu ZALO_BOT_TOKEN."}
+        return {"status": "success", "result": get_webhook_info(token), "timestamp": ts}
+
+    # --- Zalo Bot: sendMessage (gửi text tuỳ ý) ---
+    if action == "zalo_send_message":
+        from src.zalo_bot import get_bot_token, send_message, resolve_chat_id
+        token = get_bot_token()
+        if not token:
+            return {"status": "error", "error": "NO_ZALO_TOKEN", "message": "Thiếu ZALO_BOT_TOKEN."}
+        chat_id = resolve_chat_id(payload.get("chat_id"), getattr(context, "user_id", None))
+        if not chat_id:
+            return {"status": "error", "error": "NO_CHAT_ID", "message": "Truyền chat_id hoặc cấu hình ZALO_CHAT_ID."}
+        text = payload.get("text", "")
+        if not text:
+            return {"status": "error", "error": "NO_TEXT", "message": "Thiếu nội dung text."}
+        return {"status": "success", "result": send_message(token, chat_id, text, parse_mode=payload.get("parse_mode", "markdown")), "timestamp": ts}
+
+    # --- Zalo Bot: list known chat_ids (từ webhook) ---
+    if action == "zalo_list_chats":
+        from src.zalo_bot import get_known_chat_ids
+        return {"status": "success", "chats": get_known_chat_ids(), "timestamp": ts}
+
+    # --- Zalo Bot: gửi thông báo + PDF đã ký cho khách hàng ---
+    if action == "send_zalo_notification":
+        from src.zalo_bot import (
+            get_bot_token, resolve_chat_id, send_notification_to_customer, build_notification_text,
+        )
+
+        # Ưu tiên PDF vintage (bản PDF đẹp), fallback về signed_file_base64 gốc
+        pdf_b64 = payload.get("pdf_base64") or payload.get("vintage_pdf_base64") or ""
+        filename = payload.get("filename") or payload.get("vintage_pdf_filename") or "signed.pdf"
+        document_id = payload.get("document_id", "")
+        form_code = payload.get("form_code", "")
+        signed_hash = payload.get("signed_hash", "")
+        signed_by = payload.get("signed_by", "")
+        chat_id_override = payload.get("chat_id") or payload.get("zalo_user_id")
+
+        if not pdf_b64:
+            return {"status": "error", "error": "NO_PDF", "message": "Thiếu PDF base64 để gửi."}
+
+        # Decode base64 (hỗ trợ data URL)
+        raw_b64 = pdf_b64.split(",", 1)[-1] if "," in pdf_b64 else pdf_b64
+        try:
+            pdf_bytes = base64.b64decode(raw_b64)
+        except Exception:
+            return {"status": "error", "error": "INVALID_BASE64", "message": "PDF content không hợp lệ."}
+
+        # Lấy bot token
+        token = get_bot_token()
+        if not token:
+            return {
+                "status": "error",
+                "error": "NO_ZALO_TOKEN",
+                "message": "Thiếu Zalo Bot token. Cấu hình ZALO_BOT_TOKEN env var hoặc AgentBase auth provider 'zalo-bot-token'.",
+            }
+
+        # Xác định chat_id người nhận
+        chat_id = resolve_chat_id(chat_id_override, getattr(context, "user_id", None))
+        if not chat_id:
+            return {
+                "status": "error",
+                "error": "NO_CHAT_ID",
+                "message": "Không tìm thấy Zalo chat_id. Truyền chat_id, cấu hình ZALO_CHAT_ID, hoặc nhắn cho bot trước để agent lưu chat_id.",
+            }
+
+        notification_text = build_notification_text(document_id, form_code, signed_hash, signed_by, filename)
+        zalo_result = send_notification_to_customer(token, chat_id, notification_text, pdf_bytes, filename)
+
+        return {
+            "status": "success" if zalo_result.get("success") else "error",
+            "zalo": zalo_result,
+            "message": "Đã gửi thông báo qua Zalo Bot thành công." if zalo_result.get("success") else (zalo_result.get("error") or "Gửi Zalo thất bại."),
+            "timestamp": ts,
+        }
+
     # --- Chat (default) ---
     message = payload.get("message", "")
     if not message:
@@ -369,9 +472,83 @@ def health_check() -> PingStatus:
 
 
 # --- Serve the bundled frontend (static export) at "/" ---
-# Mounted AFTER /health and /invocations so those API routes take priority.
-import os
+# Mounted AFTER /health, /invocations, and /zalo-webhook so those API routes take priority.
 from pathlib import Path
+
+# --- Zalo Bot Webhook endpoint ---
+# Zalo gửi POST tới URL này khi có user nhắn cho bot.
+# Header X-Bot-Api-Secret-Token dùng để xác thực.
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import JSONResponse as StarletteJSONResponse
+from starlette.routing import Route as StarletteRoute
+
+ZALO_WEBHOOK_SECRET = os.environ.get("ZALO_WEBHOOK_SECRET", "")
+
+
+async def _zalo_webhook_handler(request: StarletteRequest):
+    """Receive Zalo Bot webhook events and auto-respond to user messages."""
+    import logging as _lg
+
+    _log = _lg.getLogger("zalo_webhook")
+
+    # 1. Validate secret token
+    secret = request.headers.get("x-bot-api-secret-token", "")
+    if ZALO_WEBHOOK_SECRET and secret != ZALO_WEBHOOK_SECRET:
+        _log.warning("Zalo webhook: secret token mismatch.")
+        return StarletteJSONResponse({"ok": False, "error": "unauthorized"}, status_code=403)
+
+    # 2. Parse event
+    try:
+        body = await request.json()
+    except Exception as e:
+        _log.warning("Zalo webhook: invalid JSON: %s", e)
+        return StarletteJSONResponse({"ok": False, "error": "invalid_json"}, status_code=400)
+
+    from src.zalo_bot import handle_webhook_event, get_bot_token, send_message
+
+    parsed = handle_webhook_event(body)
+    _log.info("Zalo webhook event: %s", parsed)
+
+    # 3. Auto-respond to text messages
+    if parsed.get("event_name") == "message.text.received" and parsed.get("chat_id"):
+        chat_id = parsed["chat_id"]
+        text = (parsed.get("text") or "").strip().lower()
+        from_name = parsed.get("from_name", "quý khách")
+
+        if text in ("/start", "start", "hi", "hello", "chào", "chao", ""):
+            reply = (
+                f"# Chào {from_name}! 👋\n\n"
+                f"Đây là **MSB SmartForm AI Bot** — trợ lý ký số thông minh.\n\n"
+                f"**Các lệnh:**\n"
+                f"- `/start` — xem hướng dẫn\n"
+                f"- `status` — kiểm tra trạng thái hồ sơ\n\n"
+                f"Khi quý khách ký số thành công trên web, bot sẽ tự động gửi thông báo + bản mềm PDF tại đây."
+            )
+        elif text == "status":
+            reply = (
+                f"**Trạng thái hồ sơ:** Chưa có hồ sơ nào được ký trong phiên này.\n\n"
+                f"Quý khách có thể ký số tại: MSB SmartForm AI Web."
+            )
+        else:
+            reply = (
+                f"Đã nhận tin nhắn: \"{parsed.get('text', '')}\"\n\n"
+                f"MSB SmartForm AI Bot đang xử lý. Gõ `/start` để xem hướng dẫn."
+            )
+
+        # Best effort gửi phản hồi
+        try:
+            token = get_bot_token()
+            if token:
+                send_message(token, chat_id, reply, parse_mode="markdown")
+        except Exception as e:
+            _log.error("Zalo webhook: auto-respond failed: %s", e)
+
+    return StarletteJSONResponse({"ok": True})
+
+
+# Insert webhook route BEFORE static mount so it takes priority
+app.router.routes.insert(0, StarletteRoute("/zalo-webhook", _zalo_webhook_handler, methods=["POST"]))
+
 
 _static_dir = Path(os.environ.get("STATIC_DIR", "static"))
 if _static_dir.exists():

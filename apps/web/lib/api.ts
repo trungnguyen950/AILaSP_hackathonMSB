@@ -208,3 +208,47 @@ export async function exportFormPdf(code: string): Promise<VintagePdfResult> {
   if (res.status === "error") throw new Error(res.message || "Export form PDF failed");
   return res as unknown as VintagePdfResult;
 }
+
+export type ZaloNotificationResult = {
+  status: string;
+  message?: string;
+  zalo: {
+    chat_id: string;
+    timestamp: string;
+    success: boolean;
+    steps: Record<string, any>;
+    error?: string;
+  };
+  timestamp: string;
+  error?: string;
+};
+
+export async function sendZaloNotification(params: {
+  pdf_base64: string;
+  filename: string;
+  document_id?: string;
+  form_code?: string;
+  signed_hash?: string;
+  signed_by?: string;
+  chat_id?: string;
+  session_id?: string;
+}): Promise<ZaloNotificationResult> {
+  const res = await invoke("send_zalo_notification", params);
+  return res as unknown as ZaloNotificationResult;
+}
+
+export async function zaloGetMe(): Promise<any> {
+  return invoke("zalo_get_me");
+}
+
+export async function zaloSetWebhook(url: string, secretToken?: string): Promise<any> {
+  return invoke("zalo_set_webhook", { url, secret_token: secretToken });
+}
+
+export async function zaloGetWebhookInfo(): Promise<any> {
+  return invoke("zalo_get_webhook_info");
+}
+
+export async function zaloListChats(): Promise<any> {
+  return invoke("zalo_list_chats");
+}

@@ -7,11 +7,13 @@ import {
   mockSignDocument,
   uploadAndCheck,
   signUploadedFile,
+  sendZaloNotification,
   type FormMeta,
   type MockCert,
   type SignResult,
   type UploadCheckResult,
   type SignFileResult,
+  type ZaloNotificationResult,
 } from "@/lib/api";
 
 const MOCK_CERTS: MockCert[] = [
@@ -32,6 +34,11 @@ export default function SignPage() {
   const [result, setResult] = useState<SignResult | null>(null);
   const [fileResult, setFileResult] = useState<SignFileResult | null>(null);
   const [checkResult, setCheckResult] = useState<UploadCheckResult | null>(null);
+
+  // Zalo notification state
+  const [zaloResult, setZaloResult] = useState<ZaloNotificationResult | null>(null);
+  const [zaloSending, setZaloSending] = useState(false);
+  const [zaloError, setZaloError] = useState("");
 
   // File upload state
   const [file, setFile] = useState<File | null>(null);
@@ -174,6 +181,58 @@ export default function SignPage() {
     document.body.removeChild(link);
   };
 
+  // --- Send Zalo notification + signed PDF to customer ---
+  const handleSendZalo = async () => {
+    setZaloError("");
+    setZaloResult(null);
+    setZaloSending(true);
+    try {
+      let pdfBase64 = "";
+      let filename = "signed.pdf";
+      let documentId = "";
+      let formCode = selectedCode;
+      let signedHash = "";
+      let signedBy = "";
+
+      if (fileResult) {
+        pdfBase64 = fileResult.vintage_pdf_base64 || fileResult.signed_file_base64;
+        filename = fileResult.vintage_pdf_filename || fileResult.signed_filename;
+        signedHash = fileResult.signed_hash;
+        signedBy = MOCK_CERTS[selectedCert].subject;
+        documentId = (fileResult.webhook as any)?.documentId || "";
+        formCode = (fileResult.webhook as any)?.formCode || selectedCode;
+      } else if (result) {
+        pdfBase64 = result.signed_pdf_base64;
+        filename = `${result.document_id}_signed.pdf`;
+        documentId = result.document_id;
+        signedHash = result.signed_hash;
+        signedBy = result.webhook?.signedBy || MOCK_CERTS[selectedCert].subject;
+        formCode = result.webhook?.formCode || selectedCode;
+      }
+
+      if (!pdfBase64) {
+        throw new Error("Không có PDF đã ký để gửi.");
+      }
+
+      const res = await sendZaloNotification({
+        pdf_base64: pdfBase64,
+        filename,
+        document_id: documentId,
+        form_code: formCode,
+        signed_hash: signedHash,
+        signed_by: signedBy,
+      });
+      setZaloResult(res);
+      if (res.status === "error") {
+        setZaloError(res.message || res.error || "Gửi Zalo thất bại.");
+      }
+    } catch (e: any) {
+      setZaloError(e.message || "Lỗi khi gửi thông báo Zalo.");
+    } finally {
+      setZaloSending(false);
+    }
+  };
+
   const reset = () => {
     setPhase("idle");
     setError("");
@@ -182,6 +241,9 @@ export default function SignPage() {
     setCheckResult(null);
     setFile(null);
     setFileContent("");
+    setZaloResult(null);
+    setZaloError("");
+    setZaloSending(false);
     sigRef.current?.clear();
   };
 
@@ -419,15 +481,34 @@ export default function SignPage() {
                   >
                     ⬇ Tải file gốc ({fileResult.file_type})
                   </button>
-                  {fileResult.vintage_pdf_base64 && (
-                    <button
-                      onClick={downloadSignedPdf}
-                      className="flex w-full items-center justify-center gap-2 rounded-btn border border-brand bg-brand-50 px-4 py-3 text-sm font-bold text-brand transition hover:bg-brand-100"
-                    >
-                      ⬇ Tải PDF vintage
-                    </button>
-                  )}
+                  <button
+                    onClick={handleSendZalo}
+                    disabled={zaloSending}
+                    className="flex w-full items-center justify-center gap-2 rounded-btn border border-brand bg-brand-50 px-4 py-3 text-sm font-bold text-brand transition hover:bg-brand-100 disabled:opacity-50"
+                  >
+                    {zaloSending ? (
+                      <><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand border-t-transparent" /> Đang gửi Zalo...</>
+                    ) : zaloResult?.status === "success" ? (
+                      <>✅ Đã gửi Zalo</>
+                    ) : (
+                      <>💬 Gửi Zalo Bot</>
+                    )}
+                  </button>
                 </div>
+                {(zaloError || zaloResult) && (
+                  <div className={`mt-3 rounded-btn p-3 text-xs ${zaloResult?.status === "success" ? "bg-status-readyBg text-status-ready" : "bg-status-dangerBg text-status-danger"}`}>
+                    {zaloError && <div className="font-bold">❌ {zaloError}</div>}
+                    {zaloResult?.status === "success" && (
+                      <div>
+                        <div className="font-bold">✅ Đã gửi thông báo qua Zalo Bot thành công</div>
+                        <div className="mt-1 text-ink-700">
+                          Chat ID: {zaloResult.zalo.chat_id}
+                          {zaloResult.zalo.steps?.text_message_id && ` · MsgID: ${zaloResult.zalo.steps.text_message_id}`}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
 
@@ -443,12 +524,41 @@ export default function SignPage() {
                     <div className="mt-1 break-all font-mono text-xs text-ink-900">{result.signed_hash}</div>
                   </div>
                 </div>
-                <button
-                  onClick={downloadGeneratedPdf}
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-btn border border-status-ready bg-white px-4 py-3 text-sm font-bold text-status-ready transition hover:bg-status-readyBg"
-                >
-                  ⬇ Tải xuống PDF đã ký
-                </button>
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <button
+                    onClick={downloadGeneratedPdf}
+                    className="flex w-full items-center justify-center gap-2 rounded-btn border border-status-ready bg-white px-4 py-3 text-sm font-bold text-status-ready transition hover:bg-status-readyBg"
+                  >
+                    ⬇ Tải xuống PDF đã ký
+                  </button>
+                  <button
+                    onClick={handleSendZalo}
+                    disabled={zaloSending}
+                    className="flex w-full items-center justify-center gap-2 rounded-btn border border-brand bg-brand-50 px-4 py-3 text-sm font-bold text-brand transition hover:bg-brand-100 disabled:opacity-50"
+                  >
+                    {zaloSending ? (
+                      <><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand border-t-transparent" /> Đang gửi Zalo...</>
+                    ) : zaloResult?.status === "success" ? (
+                      <>✅ Đã gửi Zalo</>
+                    ) : (
+                      <>💬 Gửi Zalo Bot</>
+                    )}
+                  </button>
+                </div>
+                {(zaloError || zaloResult) && (
+                  <div className={`mt-3 rounded-btn p-3 text-xs ${zaloResult?.status === "success" ? "bg-status-readyBg text-status-ready" : "bg-status-dangerBg text-status-danger"}`}>
+                    {zaloError && <div className="font-bold">❌ {zaloError}</div>}
+                    {zaloResult?.status === "success" && (
+                      <div>
+                        <div className="font-bold">✅ Đã gửi thông báo qua Zalo Bot thành công</div>
+                        <div className="mt-1 text-ink-700">
+                          Chat ID: {zaloResult.zalo.chat_id}
+                          {zaloResult.zalo.steps?.text_message_id && ` · MsgID: ${zaloResult.zalo.steps.text_message_id}`}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>

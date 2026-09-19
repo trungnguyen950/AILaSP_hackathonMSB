@@ -413,12 +413,20 @@ def b8_checklist(state: GraphState) -> dict:
 def _extract_fields(tpl: FormTemplate, text: str, collected: dict[str, str] | None = None, question_fields: list[str] | None = None) -> dict[str, str]:
     """Heuristically extract field values from free-text.
 
-    Supports: pipe-separated, comma-separated, numbered list, and keyword-based.
+    Supports: Label: value lines, pipe-separated, comma-separated, numbered list, and keyword-based.
     question_fields: ordered list of field keys that were asked in the previous question.
     """
     out: dict[str, str] = {}
     t = text.strip()
     prev = collected or {}
+
+    # --- "Label: value" format (highest priority) ---
+    label_matches = _parse_label_value_lines(t, tpl)
+    for key, val in label_matches.items():
+        if val and not form_engine.is_secret(key) and key not in {**prev, **out}:
+            out[key] = val
+    if label_matches:
+        return out
 
     parts: list[str] | None = None
     if "|" in t:
@@ -472,6 +480,78 @@ def is_filled(tpl: FormTemplate, key: str, out: dict) -> bool:
 def _assign(tpl: FormTemplate, out: dict, key: str, val: str) -> None:
     if key not in out and any(f.key == key for f in tpl.fields) and not form_engine.is_secret(key):
         out[key] = val
+
+
+def _normalize_label(s: str) -> str:
+    """Normalize label for fuzzy matching: lowercase, remove diacritics, remove extra spaces."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s)
+    s = s.encode("ascii", "ignore").decode("ascii")
+    s = s.lower().strip()
+    s = s.replace("(", " ").replace(")", " ").replace("/", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _parse_label_value_lines(text: str, tpl: FormTemplate) -> dict[str, str]:
+    """Parse 'Label: value' lines and match to form fields by label.
+
+    Handles:
+      - Exact match: "Họ tên (mới)" → field with label "Họ tên (mới)"
+      - Partial match: "CCCD" → field with label "CCCD (mới)" or "CCCD/Hộ chiếu"
+      - Diacritics-insensitive: "Ho ten (moi)" matches "Họ tên (mới)"
+    """
+    result: dict[str, str] = {}
+    lines = text.strip().splitlines()
+    if len(lines) < 2:
+        return result
+
+    # Build field label index: (key, normalized_label)
+    field_labels: list[tuple[str, str]] = []
+    for f in tpl.fields:
+        if form_engine.is_secret(f.key):
+            continue
+        field_labels.append((f.key, _normalize_label(f.label)))
+        if f.label_en:
+            field_labels.append((f.key, _normalize_label(f.label_en)))
+
+    for line in lines:
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        parts = line.split(":", 1)
+        if len(parts) != 2:
+            continue
+        raw_label, value = parts[0].strip(), parts[1].strip()
+        if not value:
+            continue
+        norm_label = _normalize_label(raw_label)
+
+        best_key = None
+        best_score = 0
+        for key, norm_fl in field_labels:
+            if norm_label == norm_fl:
+                best_key = key
+                best_score = 100
+                break
+            if norm_label in norm_fl or norm_fl in norm_label:
+                score = min(len(norm_label), len(norm_fl)) / max(len(norm_label), len(norm_fl), 1) * 80
+                if score > best_score:
+                    best_score = score
+                    best_key = key
+            words_label = set(norm_label.split())
+            words_field = set(norm_fl.split())
+            overlap = words_label & words_field
+            if overlap:
+                score = len(overlap) / max(len(words_label), len(words_field), 1) * 70
+                if score > best_score:
+                    best_score = score
+                    best_key = key
+
+        if best_key and best_score >= 50:
+            result[best_key] = value
+
+    return result
 
 
 def _build_output(state: GraphState, tpl: FormTemplate, filled: dict, result, checklist: list) -> dict:
