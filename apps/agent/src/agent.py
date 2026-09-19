@@ -75,6 +75,7 @@ class GraphState(TypedDict, total=False):
     conversation_phase: str
     explanation: Optional[str]
     example: Optional[str]
+    skip_customer_default: bool
 
 
 def _template(code: Optional[str]) -> Optional[FormTemplate]:
@@ -86,7 +87,14 @@ def b1_identify(state: GraphState) -> dict:
     msg = state.get("message", "")
     customer = match_demo_customer(msg)
     if not customer:
-        customer = state.get("customer") or DEMO_CUSTOMERS[0]
+        existing = state.get("customer")
+        msg = state.get("message", "")
+        if existing is not None:
+            customer = existing
+        elif state.get("skip_customer_default") or msg.startswith("Tôi muốn điền mẫu"):
+            customer = None
+        else:
+            customer = DEMO_CUSTOMERS[0]
     return {"customer": customer}
 
 
@@ -370,7 +378,13 @@ def b4_missing(state: GraphState) -> dict:
     question = None
     if missing:
         labels = [f.label for f in tpl.fields if f.key in missing]
-        question = "Để hoàn thiện hồ sơ, vui lòng cung cấp:\n" + "\n".join(f"{i+1}. {l}" for i, l in enumerate(labels))
+        customer = state.get("customer")
+        is_en = customer and customer.is_fdi and customer.legal_rep_nationality and customer.legal_rep_nationality != "Vietnam"
+        if is_en:
+            labels = [(f.label_en or f.label) for f in tpl.fields if f.key in missing]
+            question = "To complete the form, please provide:\n" + "\n".join(f"{i+1}. {l}" for i, l in enumerate(labels))
+        else:
+            question = "Để hoàn thiện hồ sơ, vui lòng cung cấp:\n" + "\n".join(f"{i+1}. {l}" for i, l in enumerate(labels))
     return {"collected": collected, "missing": missing, "filled": filled, "question": question}
 
 
@@ -763,6 +777,7 @@ def run(session_id: str, message: str) -> dict:
         "intents": list(state.intents),
         "prev_missing": list(state.missing),
         "conversation_phase": conversation_phase,
+        "skip_customer_default": state.customer is None and state.conversation_phase in ("example_shown", "collecting"),
     }
     result = graph.invoke(init)
 

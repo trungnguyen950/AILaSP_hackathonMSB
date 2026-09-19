@@ -494,7 +494,7 @@ async def _zalo_webhook_handler(request: StarletteRequest):
     # 1. Validate secret token
     secret = request.headers.get("x-bot-api-secret-token", "")
     if ZALO_WEBHOOK_SECRET and secret != ZALO_WEBHOOK_SECRET:
-        _log.warning("Zalo webhook: secret token mismatch.")
+        _log.warning("Zalo webhook: secret token mismatch. Got=%s Expected=%s", secret[:8], ZALO_WEBHOOK_SECRET[:8])
         return StarletteJSONResponse({"ok": False, "error": "unauthorized"}, status_code=403)
 
     # 2. Parse event
@@ -509,6 +509,8 @@ async def _zalo_webhook_handler(request: StarletteRequest):
     parsed = handle_webhook_event(body)
     _log.info("Zalo webhook event: %s", parsed)
 
+    respond_result = None
+
     # 3. Auto-respond to text messages
     if parsed.get("event_name") == "message.text.received" and parsed.get("chat_id"):
         chat_id = parsed["chat_id"]
@@ -518,32 +520,42 @@ async def _zalo_webhook_handler(request: StarletteRequest):
         if text in ("/start", "start", "hi", "hello", "chào", "chao", ""):
             reply = (
                 f"# Chào {from_name}! 👋\n\n"
-                f"Đây là **MSB SmartForm AI Bot** — trợ lý ký số thông minh.\n\n"
-                f"**Các lệnh:**\n"
-                f"- `/start` — xem hướng dẫn\n"
-                f"- `status` — kiểm tra trạng thái hồ sơ\n\n"
-                f"Khi quý khách ký số thành công trên web, bot sẽ tự động gửi thông báo + bản mềm PDF tại đây."
+                f"Đây là **Bot AI SmartForm** — trợ lý ký số MSB.\n\n"
+                f"**Chat ID của bạn:**\n`{chat_id}`\n\n"
+                f"**Hướng dẫn:**\n"
+                f"1. Copy chat ID ở trên\n"
+                f"2. Ký PDF trên web MSB SmartForm AI\n"
+                f"3. Dán chat ID vào ô \"Zalo chat_id\" → bấm **Gửi Zalo Bot**\n"
+                f"4. Bot sẽ gửi thông báo ký thành công tại đây\n\n"
+                f"Gõ `status` để kiểm tra trạng thái hồ sơ."
             )
         elif text == "status":
             reply = (
-                f"**Trạng thái hồ sơ:** Chưa có hồ sơ nào được ký trong phiên này.\n\n"
-                f"Quý khách có thể ký số tại: MSB SmartForm AI Web."
+                f"**Trạng thái:** Chưa có hồ sơ nào được ký.\n\n"
+                f"Chat ID của bạn: `{chat_id}`\n"
+                f"Ký PDF trên web → dán chat ID vào ô Zalo → bấm Gửi."
             )
         else:
             reply = (
-                f"Đã nhận tin nhắn: \"{parsed.get('text', '')}\"\n\n"
-                f"MSB SmartForm AI Bot đang xử lý. Gõ `/start` để xem hướng dẫn."
+                f"Đã nhận: \"{parsed.get('text', '')}\"\n\n"
+                f"**Chat ID của bạn:** `{chat_id}`\n\n"
+                f"Gõ `/start` để xem hướng dẫn."
             )
 
-        # Best effort gửi phản hồi
+        # Gửi phản hồi + ghi kết quả
         try:
             token = get_bot_token()
             if token:
-                send_message(token, chat_id, reply, parse_mode="markdown")
+                respond_result = send_message(token, chat_id, reply, parse_mode="markdown")
+                _log.info("Zalo auto-respond → chat_id=%s result=%s", chat_id, respond_result)
+            else:
+                respond_result = {"ok": False, "error": "NO_BOT_TOKEN"}
+                _log.error("Zalo webhook: no bot token available for auto-respond.")
         except Exception as e:
+            respond_result = {"ok": False, "error": str(e)}
             _log.error("Zalo webhook: auto-respond failed: %s", e)
 
-    return StarletteJSONResponse({"ok": True})
+    return StarletteJSONResponse({"ok": True, "parsed": parsed, "respond": respond_result})
 
 
 # Insert webhook route BEFORE static mount so it takes priority

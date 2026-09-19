@@ -138,9 +138,10 @@ def notify_ai_agent(webhook_payload: dict, session_id: str) -> dict:
     logger.info("Session: %s", session_id)
     logger.info("=" * 60)
 
+    doc_ref = webhook_payload.get("documentId") or webhook_payload.get("filename") or webhook_payload.get("formCode") or "hồ sơ"
     return {
         "acknowledged": True,
-        "message": f"AI Agent đã nhận thông báo ký cho document {webhook_payload.get('documentId')}",
-        "nextStep": "Cập nhật trạng thái hồ sơ → SIGNED → sinh checklist final",
+        "message": f"Đã ký số thành công cho {doc_ref}.",
+        "nextStep": "Trạng thái hồ sơ đã cập nhật: SIGNED",
         "timestamp": datetime.now().isoformat(),
     }

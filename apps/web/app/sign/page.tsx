@@ -39,6 +39,7 @@ export default function SignPage() {
   const [zaloResult, setZaloResult] = useState<ZaloNotificationResult | null>(null);
   const [zaloSending, setZaloSending] = useState(false);
   const [zaloError, setZaloError] = useState("");
+  const [zaloChatId, setZaloChatId] = useState("");
 
   // File upload state
   const [file, setFile] = useState<File | null>(null);
@@ -221,6 +222,7 @@ export default function SignPage() {
         form_code: formCode,
         signed_hash: signedHash,
         signed_by: signedBy,
+        chat_id: zaloChatId || undefined,
       });
       setZaloResult(res);
       if (res.status === "error") {
@@ -495,6 +497,15 @@ export default function SignPage() {
                     )}
                   </button>
                 </div>
+                <div className="mt-2">
+                  <input
+                    type="text"
+                    value={zaloChatId}
+                    onChange={(e) => setZaloChatId(e.target.value)}
+                    placeholder="Zalo chat_id (nhắn bot trước để lấy chat_id, hoặc để trống nếu đã cấu hình)"
+                    className="w-full rounded-btn border border-ink-200 px-3 py-2 text-xs outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+                  />
+                </div>
                 {(zaloError || zaloResult) && (
                   <div className={`mt-3 rounded-btn p-3 text-xs ${zaloResult?.status === "success" ? "bg-status-readyBg text-status-ready" : "bg-status-dangerBg text-status-danger"}`}>
                     {zaloError && <div className="font-bold">❌ {zaloError}</div>}
@@ -544,6 +555,15 @@ export default function SignPage() {
                       <>💬 Gửi Zalo Bot</>
                     )}
                   </button>
+                </div>
+                <div className="mt-2">
+                  <input
+                    type="text"
+                    value={zaloChatId}
+                    onChange={(e) => setZaloChatId(e.target.value)}
+                    placeholder="Zalo chat_id (nhắn bot trước để lấy chat_id, hoặc để trống nếu đã cấu hình)"
+                    className="w-full rounded-btn border border-ink-200 px-3 py-2 text-xs outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+                  />
                 </div>
                 {(zaloError || zaloResult) && (
                   <div className={`mt-3 rounded-btn p-3 text-xs ${zaloResult?.status === "success" ? "bg-status-readyBg text-status-ready" : "bg-status-dangerBg text-status-danger"}`}>

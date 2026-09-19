@@ -197,8 +197,8 @@ export async function signUploadedFile(
   return res as unknown as SignFileResult;
 }
 
-export async function exportVintagePdf(code: string): Promise<VintagePdfResult> {
-  const res = await invoke("export_vintage_pdf", { code });
+export async function exportVintagePdf(code: string, sessionId?: string): Promise<VintagePdfResult> {
+  const res = await invoke("export_vintage_pdf", { code, session_id: sessionId });
   if (res.status === "error") throw new Error(res.message || "Export PDF failed");
   return res as unknown as VintagePdfResult;
 }

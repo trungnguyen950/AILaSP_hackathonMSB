@@ -174,12 +174,17 @@ def get_updates(token: str, timeout: int = 30) -> dict:
 def handle_webhook_event(body: dict) -> dict:
     """Xử lý event nhận được từ Zalo webhook.
 
+    Zalo gửi payload ở 2 dạng:
+      1. {event_name, message, ...}          — dạng THẬT (trực tiếp top-level)
+      2. {ok: true, result: {event_name, ...}} — dạng docs (có wrapper result)
+    Hàm này handle cả 2.
+
     Lưu chat_id của user vào memory + trả về context để handler gửi phản hồi.
     Returns: {"event_name": ..., "chat_id": ..., "text": ..., "from": ...}
     """
-    result = body.get("result", {})
-    event_name = result.get("event_name", "")
-    message = result.get("message", {})
+    result = body.get("result") or body
+    event_name = result.get("event_name", "") or body.get("event_name", "")
+    message = result.get("message", {}) or body.get("message", {})
     from_info = message.get("from", {})
     chat = message.get("chat", {})
     chat_id = chat.get("id", "")

@@ -143,7 +143,7 @@ function PageContent() {
     if (!form) return;
     setPdfLoading(true);
     try {
-      const res = await exportVintagePdf(form.code);
+      const res = await exportVintagePdf(form.code, sessionId);
       const link = document.createElement("a");
       link.href = res.pdf_base64;
       link.download = res.filename;
