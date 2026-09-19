@@ -14,13 +14,15 @@ Mở trình duyệt tại địa chỉ:
 https://endpoint-f1ef0f3c-da52-4977-8b6e-e096c3af9588.agentbase-runtime.aiplatform.vngcloud.vn
 ```
 
-Thanh điều hướng trên cùng có 3 trang:
+Thanh điều hướng trên cùng có 5 trang:
 
 | Nút | Trang | Chức năng |
 |---|---|---|
 | 💬 Chat | `/` | Chat với AI Agent để chọn mẫu, điền hồ sơ |
 | 📋 Mẫu Biểu Mẫu | `/forms/` | Thư viện 9 biểu mẫu MSB |
 | ✍️ Ký Số | `/sign/` | Mô phỏng ký chữ ký số lên file |
+| 📊 Dashboard | `/dashboards/` | Realtime metrics: hệ thống + business impact |
+| 📖 Hướng dẫn | `/user-guide/` | Hướng dẫn sử dụng đầy đủ |
 
 ---
 
@@ -252,6 +254,61 @@ Nếu **không upload file**:
 3. Nhấn **✍️ Ký PDF Tạo Sẵn (từ form)**
 4. Agent tạo PDF 2 trang (trang 1: dữ liệu form, trang 2: chữ ký)
 5. Tải xuống PDF đã ký
+
+---
+
+## Trang 4: 📊 Dashboard (`/dashboards/`)
+
+### Mục đích
+
+Tổng hợp realtime metrics đánh giá hiệu quả hệ thống và business impact — cập nhật mỗi 3 giây.
+
+### 3 nhóm metrics
+
+#### System & Performance (4 KPI cards + 2 charts)
+
+| KPI Card | Metric | Ý nghĩa |
+|---|---|---|
+| ⚡ API Response Time | ms | Độ trễ phản hồi Agent (P95) |
+| ⚠️ Error Rate | % | Tỷ lệ lỗi API |
+| 📄 Page Load Time | ms | Core Web Vitals |
+| 👥 Active Users | online | Số người dùng đang online (realtime) |
+
+Charts:
+- **Line chart**: Active Users realtime (20 điểm gần nhất)
+- **Donut chart**: API Success vs Errors
+
+#### BU Impact (4 KPI cards + 2 charts)
+
+| KPI Card | Metric | Ý nghĩa |
+|---|---|---|
+| 🎯 Conversion Rate | % | Tỷ lệ Form → READY |
+| ⏱️ Avg Engagement | giây | Thời gian trung bình trên trang |
+| ✅ Task Success Rate | % | Tỷ lệ hoàn thành tác vụ |
+| 🔄 Retention Rate | % | Tỷ lệ quay lại |
+
+Charts:
+- **Bar chart**: Engagement by Page (Chat / Forms / Sign / Guide)
+- **Bar chart**: BU Impact Metrics tổng hợp
+
+#### Business Analytics — Signing & Form Usage (4 KPI cards + 4 charts)
+
+| KPI Card | Metric | Ý nghĩa |
+|---|---|---|
+| ✍️ Total Signed | docs | Tổng số hồ sơ đã ký thành công |
+| 📊 Sign Success Rate | % | Conversion từ form → signed |
+| 💬 Forms Used (Chat) | times | Form usage từ persona chat |
+| 🤖 Forms Used (AI Fill) | times | Form usage từ /forms page |
+
+Charts:
+- **Funnel chart**: Signing Funnel — Form Selected → Data Collected → QC Passed → Signed (với dropoff %)
+- **Donut chart**: Form Usage by Source (Chat vs AI Fill vs Download)
+- **Horizontal bar chart**: Most Used Forms — top 9 forms xếp hạng theo usage (đỏ=Chat, tím=Forms)
+- **Bar chart**: Daily Sign Trend — 14 ngày gần nhất
+
+### Ghi chú
+
+> Dữ liệu hiện là **mock realtime** (cập nhật mỗi 3 giây). Cấu trúc hook `useMetrics()` tách biệt phần fetch data, dễ thay thế bằng API thật (Prometheus, Grafana, custom backend) mà không đổi UI. Charts 100% SVG thuần — zero external dependency.
 
 ---
 

@@ -15,7 +15,7 @@ flowchart LR
   end
 
   subgraph AgentBase["GreenNode AgentBase Runtime (1 container, port 8080)"]
-    FE["Web Frontend<br/>Next.js Static Export<br/>4 routes: / /forms/ /sign/ /user-guide/"]
+    FE["Web Frontend<br/>Next.js Static Export<br/>5 routes: / /forms/ /sign/ /dashboards/ /user-guide/"]
     APP["FastAPI + greennode-agentbase SDK<br/>GET /health · POST /invocations"]
     AG["Agent Orchestrator<br/>LangGraph guided FSM<br/>b1→b2→b3→b3a→b3b→b4→b5-b8"]
     RAG["RAG Retriever<br/>rule-based + FDI intent"]
@@ -52,7 +52,7 @@ flowchart LR
 
 ```mermaid
 graph TB
-  FE["Web Frontend<br/>Chat · Forms · Sign · User Guide"]
+  FE["Web Frontend<br/>Chat · Forms · Sign · Dashboard · User Guide"]
   APP["Agent Entrypoint<br/>dispatch by action"]
   AG["Agent Orchestrator<br/>LangGraph guided FSM"]
   RAG["RAG Retriever<br/>semantic + FDI + English keywords"]
@@ -91,6 +91,7 @@ graph TB
 | PDF | fpdf2 + pypdf + vintage_pdf.py | Tạo PDF + merge signature + vintage design |
 | Sign | Custom (fpdf2 + pypdf + hashlib SHA256) | Mock digital signature |
 | Zalo Bot | Zalo Bot API (send PDF + text) | Gửi hồ sơ đã ký cho khách hàng |
+| Dashboard | SVG charts thuần (line, bar, donut, funnel, h-bar) | Zero dependency, realtime mock data |
 | Container/Deploy | **GreenNode AgentBase runtime** (1 container, port 8080, `/health`) | Qua `/agentbase-deploy` |
 
 ## 4. LangGraph Guided FSM

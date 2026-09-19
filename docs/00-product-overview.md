@@ -51,11 +51,12 @@ Thay vì khách hàng phải tự tìm trong hàng chục mẫu biểu MSB, ch�
 
 ### In scope (v1.0 — Hackathon baseline)
 
-**3 trang web:**
+**5 trang web:**
 - **💬 Chat (`/`)** — Chat với AI Agent: chọn persona → giải thích form → ví dụ mẫu → thu thập dữ liệu → SOẠN HỒ SƠ → tải Text + PDF
 - **📋 Mẫu Biểu Mẫu (`/forms/`)** — Thư viện 9 biểu mẫu: tìm kiếm, lọc, tải Text/PDF, xem trước, AI Fill
 - **✍️ Ký Số (`/sign/`)** — Mô phỏng ký số: upload file → AI check → vẽ chữ ký → ký → tải file đã ký → gửi Zalo Bot
-- **📖 Hướng dẫn (`/user-guide/`)** — 9 trang hướng dẫn với sidebar, FAQ, demo end-to-end
+- **📊 Dashboard (`/dashboards/`)** — Realtime metrics: System & Performance + BU Impact + BA Analytics (signing funnel, form usage)
+- **📖 Hướng dẫn (`/user-guide/`)** — 10 trang hướng dẫn với sidebar, FAQ, demo end-to-end
 
 **Agent (Python + LangGraph):**
 - Luồng hội thoại có hướng dẫn (guided flow): giải thích từng trường + ví dụ mẫu trước khi thu thập dữ liệu
@@ -101,21 +102,24 @@ apps/
       demo_data.py     — 6 demo customers (incl. FDI)
       models.py        — Pydantic models (incl. label_en, is_fdi, bilingual)
     knowledge_base/    — 9 form templates + registry (bundled in container)
-  web/     Next.js 14 (static export, 4 routes: / /forms/ /sign/ /user-guide/)
+  web/     Next.js 14 (static export, 5 routes: / /forms/ /sign/ /dashboards/ /user-guide/)
     app/
       page.tsx              — Chat page (6 personas, guided flow, session isolation)
       forms/page.tsx        — Forms library (9 forms, search, filter, AI Fill)
       sign/page.tsx         — Sign page (upload, AI check, signature pad, Zalo)
-      user-guide/           — 9-page user guide with sidebar
+      dashboards/page.tsx   — Dashboard (KPI cards, line/bar/donut/funnel charts, realtime)
+      user-guide/           — 10-page user guide with sidebar
     components/
-      Navbar.tsx            — Shared navbar (4 links: Chat · Forms · Sign · Guide)
+      Navbar.tsx            — Shared navbar (5 links: Chat · Forms · Sign · Dashboard · Guide)
       SignaturePad.tsx      — Custom canvas signature pad (no external dep)
       PreviewModal.tsx      — Form preview modal
       StatusBadge.tsx       — READY / MISSING / NEED REVIEW / FORM EXPLAINED
+      dashboard/            — KpiCard, LineChart, BarChart, DonutChart, FunnelChart, HorizontalBarChart
       user-guide/           — Sidebar, BlockRenderer, BackToTop
     lib/
       api.ts                — API helpers (invoke, listForms, getForm, signFile, Zalo, etc.)
-      guide-content.ts      — User guide content (9 pages, typed blocks)
+      useMetrics.ts         — Mock realtime metrics hook (system + BU + BA, updates every 3s)
+      guide-content.ts      — User guide content (10 pages, typed blocks)
 docs/      SAD đầy đủ (00–10) + user-guide
 knowledge-base/  form-registry + 9 mẫu biểu giả lập
 docker-compose.yml

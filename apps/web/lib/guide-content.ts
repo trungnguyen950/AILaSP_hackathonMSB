@@ -51,6 +51,12 @@ export const NAV: NavSection[] = [
     ],
   },
   {
+    section: "Dashboard",
+    items: [
+      { slug: "dashboard/overview", title: "Tổng quan Dashboard", icon: "📊" },
+    ],
+  },
+  {
     section: "Demo & FAQ",
     items: [
       { slug: "demo", title: "Luồng end-to-end", icon: "🎯" },
@@ -247,6 +253,58 @@ export const PAGES: Record<string, GuidePage> = {
           { title: "Tải xuống PDF đã ký", desc: "Nhấn nút tải xuống → PDF về máy" },
         ],
       },
+      { type: "nextSteps", items: [{ label: "Dashboard — Tổng quan", href: "/user-guide/dashboard/overview" }] },
+    ],
+  },
+
+  "dashboard/overview": {
+    slug: "dashboard/overview",
+    title: "Dashboard — Tổng quan",
+    description: "Realtime metrics: System & Performance + BU Impact + Business Analytics",
+    section: "Dashboard",
+    icon: "📊",
+    blocks: [
+      { type: "h2", text: "Mục đích", anchor: "purpose" },
+      { type: "p", text: "Tổng hợp realtime metrics đánh giá hiệu quả hệ thống và business impact — cập nhật mỗi 3 giây." },
+      { type: "callout", variant: "info", title: "LIVE", text: "Dữ liệu mock realtime cập nhật mỗi 3 giây. Cấu trúc hook useMetrics() tách biệt phần fetch data, dễ thay thế bằng API thật." },
+      { type: "h2", text: "3 nhóm metrics", anchor: "sections" },
+      { type: "h3", text: "System & Performance" },
+      {
+        type: "table",
+        headers: ["KPI", "Metric", "Ý nghĩa"],
+        rows: [
+          ["⚡ API Response Time", "ms", "Độ trễ phản hồi Agent (P95)"],
+          ["⚠️ Error Rate", "%", "Tỷ lệ lỗi API"],
+          ["📄 Page Load Time", "ms", "Core Web Vitals"],
+          ["👥 Active Users", "online", "Số người dùng đang online (realtime)"],
+        ],
+      },
+      { type: "p", text: "Charts: Line chart (Active Users realtime), Donut chart (API Success vs Errors), Line chart (Response Time), Donut chart (Task Completion)." },
+      { type: "h3", text: "BU Impact" },
+      {
+        type: "table",
+        headers: ["KPI", "Metric", "Ý nghĩa"],
+        rows: [
+          ["🎯 Conversion Rate", "%", "Tỷ lệ Form → READY"],
+          ["⏱️ Avg Engagement", "giây", "Thời gian trung bình trên trang"],
+          ["✅ Task Success Rate", "%", "Tỷ lệ hoàn thành tác vụ"],
+          ["🔄 Retention Rate", "%", "Tỷ lệ quay lại"],
+        ],
+      },
+      { type: "p", text: "Charts: Bar chart (Engagement by Page), Bar chart (BU Impact Metrics tổng hợp)." },
+      { type: "h3", text: "Business Analytics — Signing & Form Usage" },
+      {
+        type: "table",
+        headers: ["KPI", "Metric", "Ý nghĩa"],
+        rows: [
+          ["✍️ Total Signed", "docs", "Tổng số hồ sơ đã ký thành công"],
+          ["📊 Sign Success Rate", "%", "Conversion từ form → signed"],
+          ["💬 Forms Used (Chat)", "times", "Form usage từ persona chat"],
+          ["🤖 Forms Used (AI Fill)", "times", "Form usage từ /forms page"],
+        ],
+      },
+      { type: "p", text: "Charts: Funnel chart (Signing Funnel — Form Selected → Data Collected → QC Passed → Signed), Donut chart (Form Usage by Source), Horizontal bar chart (Most Used Forms top 9), Bar chart (Daily Sign Trend 14 days)." },
+      { type: "callout", variant: "tip", text: "Charts 100% SVG thuần — zero external dependency, tương thích static export. Dễ thay thế mock data bằng API thật (Prometheus, Grafana, custom backend)." },
       { type: "nextSteps", items: [{ label: "Demo end-to-end", href: "/user-guide/demo" }] },
     ],
   },

@@ -82,17 +82,26 @@ Mỗi trả lời có cấu trúc: A. Nhu cầu · B. Loại KH · C. Nghiệp v
 
 ### FR-17 Trang hướng dẫn (`/user-guide/`)
 - **FR-17.1** 9 trang hướng dẫn với sidebar navigation, block renderer, back-to-top.
-- **FR-17.2** Nội dung: giới thiệu, chat overview + flow, forms overview + AI Fill, sign upload + generated, demo end-to-end, FAQ.
+- **FR-17.2** Nội dung: giới thiệu, chat overview + flow, forms overview + AI Fill, sign upload + generated, dashboard overview, demo end-to-end, FAQ.
 
 ### FR-18 Session isolation
 - **FR-18.1** Mỗi persona click → sinh session ID riêng (persona-{timestamp}).
 - **FR-18.2** Nút "Xoá thông tin cũ, thực hiện lại" → reset session + clear UI.
 - **FR-18.3** AI Fill từ /forms → session riêng, không pre-fill demo data (skip_customer_default flag).
 
-### FR-19 Web app
-- **FR-19.1** 4 routes: `/` (Chat), `/forms/` (Mẫu Biểu Mẫu), `/sign/` (Ký Số), `/user-guide/` (Hướng dẫn).
-- **FR-19.2** Navbar chung: 💬 Chat · 📋 Mẫu Biểu Mẫu · ✍️ Ký Số · 📖 Hướng dẫn.
-- **FR-19.3** Static export (SSG), serve từ cùng container với agent.
+### FR-19 Dashboard (`/dashboards/`)
+- **FR-19.1** System & Performance Metrics: API Response Time, Error Rate, Page Load Time, Active Users (realtime).
+- **FR-19.2** BU Impact Metrics: Conversion Rate, Avg Engagement, Task Success Rate, Retention Rate.
+- **FR-19.3** BA Analytics: Signing Funnel (Form Selected → Data Collected → QC Passed → Signed), Form Usage by Source (Chat vs Forms page), Most Used Forms (top 9), Daily Sign Trend (14 days).
+- **FR-19.4** Charts: Line chart (realtime), Bar chart (BU impact + daily trend), Donut chart (error/success + form source), Funnel chart (signing journey), Horizontal bar chart (form ranking).
+- **FR-19.5** KPI Cards: 8 system/BU cards + 4 BA cards, color-coded with trend arrows.
+- **FR-19.6** Mock realtime data: cập nhật mỗi 3 giây, cấu trúc hook `useMetrics()` tách biệt dễ thay API thật.
+- **FR-19.7** Charts 100% SVG thuần — zero external dependency, tương thích static export.
+
+### FR-20 Web app
+- **FR-20.1** 5 routes: `/` (Chat), `/forms/` (Mẫu Biểu Mẫu), `/sign/` (Ký Số), `/dashboards/` (Dashboard), `/user-guide/` (Hướng dẫn).
+- **FR-20.2** Navbar chung: 💬 Chat · 📋 Mẫu Biểu Mẫu · ✍️ Ký Số · 📊 Dashboard · 📖 Hướng dẫn.
+- **FR-20.3** Static export (SSG), serve từ cùng container với agent.
 
 ---
 

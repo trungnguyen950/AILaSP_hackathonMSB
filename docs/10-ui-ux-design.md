@@ -58,7 +58,7 @@
 
 | Component | Mô tả |
 |---|---|
-| `Navbar` | Navy header, 4 links: 💬 Chat · 📋 Mẫu Biểu Mẫu · ✍️ Ký Số · 📖 Hướng dẫn |
+| `Navbar` | Navy header, 5 links: 💬 Chat · 📋 Mẫu Biểu Mẫu · ✍️ Ký Số · 📊 Dashboard · 📖 Hướng dẫn |
 | `Logo` / `Wordmark` | SVG kim cương đỏ + text "MSB SmartForm" |
 | `StepBar` | 5 bước: Hiểu nhu cầu → Chọn mẫu → Điền → Kiểm tra → Ready |
 | `PersonaCard` | 6 thẻ: CTCP X, TNHH MTV Y, TNHH 2TV Z, DNTN A, FDI Alpha 🌐, Cá nhân A |
@@ -74,6 +74,12 @@
 | `Sidebar` (user-guide) | Navigation sidebar cho 9 trang hướng dẫn |
 | `BlockRenderer` | Render typed blocks (h2, p, code, table, steps, callout, faq, nextSteps) |
 | `BackToTop` | Floating button scroll to top |
+| `KpiCard` | Dashboard KPI card: label, value, unit, trend arrow, color-coded |
+| `LineChart` | SVG line chart with gradient fill + last-point dot (realtime data) |
+| `BarChart` | SVG bar chart (BU impact, daily trend) |
+| `DonutChart` | SVG donut chart with center label (error/success, form source) |
+| `FunnelChart` | Horizontal funnel with dropoff % per stage (signing journey) |
+| `HorizontalBarChart` | Horizontal bars with label + sublabel (form ranking) |
 
 ### 2.5 Animations
 
@@ -210,15 +216,70 @@
 └───────────┴──────────────────────────────────────┘
 ```
 
+### 4.5 Trang Dashboard (`/dashboards/`)
+
+```
+┌──────────────────────────────────────────────────────┐
+│ NAVBAR: [MSB SmartForm] 💬 📋 ✍️ 📊Dashboard 📖     │
+├──────────────────────────────────────────────────────┤
+│ 📊 Dashboard                          ● LIVE         │
+├──────────────────────────────────────────────────────┤
+│ SYSTEM & PERFORMANCE                                  │
+│ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐    │
+│ │⚡ 245ms  │ │⚠️ 2.1%  │ │📄 890ms │ │👥 14    │    │
+│ │API Time │ │Error Rt │ │Page Load│ │Active   │    │
+│ └─────────┘ └─────────┘ └─────────┘ └─────────┘    │
+│                                                       │
+│ BU IMPACT                                             │
+│ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐    │
+│ │🎯 68.5% │ │⏱️ 185s  │ │✅ 91.2% │ │🔄 76.3% │    │
+│ │Convert  │ │Engage   │ │Task Succ│ │Retent   │    │
+│ └─────────┘ └─────────┘ └─────────┘ └─────────┘    │
+│                                                       │
+│ ┌────────────────────┐ ┌─────────────┐              │
+│ │ Active Users       │ │ API Success │              │
+│ │ ╱╲╱╲╱╲╱╲╱╲ Line    │ │   ◯ Donut   │              │
+│ │  (realtime)        │ │  vs Errors  │              │
+│ └────────────────────┘ └─────────────┘              │
+│ ┌────────────────────┐ ┌─────────────┐              │
+│ │ Response Time      │ │ Task Done   │              │
+│ │ ╱╲╱╲╱╲╱╲╱╲ Line    │ │   ◯ Donut   │              │
+│ └────────────────────┘ └─────────────┘              │
+│ ┌────────────────────┐ ┌─────────────┐              │
+│ │ Engagement by Page │ │ BU Impact % │              │
+│ │ ▮ ▮ ▮ ▮  Bar       │ │ ▮ ▮ ▮ ▮ Bar │              │
+│ └────────────────────┘ └─────────────┘              │
+│                                                       │
+│ BUSINESS ANALYTICS — SIGNING & FORM USAGE             │
+│ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐    │
+│ │✍️ 218   │ │📊 68.1% │ │💬 198   │ │🤖 87    │    │
+│ │Signed   │ │Sign Succ│ │Chat Use │ │AI Fill  │    │
+│ └─────────┘ └─────────┘ └─────────┘ └─────────┘    │
+│ ┌────────────────────┐ ┌─────────────┐              │
+│ │ Signing Funnel     │ │ Form Source │              │
+│ │ ▰▰▰▰▰▰ Form Sel    │ │   ◯ Donut   │              │
+│ │ ▰▰▰▰▰  Data Coll   │ │ Chat vs AI  │              │
+│ │ ▰▰▰▰   QC Passed   │ │ vs Download │              │
+│ │ ▰▰▰    Signed      │ │             │              │
+│ └────────────────────┘ └─────────────┘              │
+│ ┌────────────────────┐ ┌─────────────┐              │
+│ │ Most Used Forms    │ │ Daily Sign  │              │
+│ │ ▰▰▰▰▰▰ EBANK-01    │ │ ▮▮▮ Bar     │              │
+│ │ ▰▰▰▰▰  DS-04       │ │ 14-day trend│              │
+│ │ ▰▰▰▰   EBANK-FDI   │ │             │              │
+│ └────────────────────┘ └─────────────┘              │
+└──────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## 5. Responsive
 
 | Breakpoint | Layout |
 |---|---|
-| Mobile (<640px) | 1 cột, button full-width, sidebar ẩn |
-| Tablet (640–1024px) | 2 cột (forms grid), chat + panel stack |
-| Desktop (>1024px) | 3 cột (forms grid), chat (1fr) + panel (360px) |
+| Mobile (<640px) | 1 cột, button full-width, sidebar ẩn, KPI cards 2 cột |
+| Tablet (640–1024px) | 2 cột (forms grid, dashboard charts), chat + panel stack |
+| Desktop (>1024px) | 3 cột (forms grid, dashboard), chat (1fr) + panel (360px) |
 
 ---
 
