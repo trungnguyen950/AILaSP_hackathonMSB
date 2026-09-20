@@ -1,62 +1,81 @@
 "use client";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 
 export type Metrics = {
-  // System & Performance
-  apiResponseTime: number;
-  errorRate: number;
-  pageLoadTime: number;
-  activeUsers: number;
-  // BU Impact
-  conversionRate: number;
-  avgEngagement: number;
-  taskSuccessRate: number;
-  retentionRate: number;
-  // Time series
-  activeUsersHistory: number[];
-  responseTimeHistory: number[];
-  // Error breakdown
-  errorCount: number;
-  successCount: number;
-  // Task breakdown
-  tasksCompleted: number;
-  tasksStarted: number;
-  // Engagement by page
-  engagementByPage: { page: string; seconds: number }[];
-  // BA: Signing funnel
+  // ═══ KPI TỔNG QUAN (realtime) ═══
+  totalDossiers: number;
+  readyCount: number;
+  missingCount: number;
+  reviewCount: number;
+  readyRate: number;
+
+  // ═══ HIỆU QUẢ VẬN HÀNH ═══
+  avgHandlingTime: number;
+  returnRate: number;
+  handlingTimeHistory: number[];
+  activeSessions: number;
+  activeSessionsHistory: number[];
+
+  // ═══ GIÁ TRỊ KINH DOANH (AEV) ═══
+  estimatedSavings: number;
+  savingsToday: number;
+  rmTimeSaved: number;
+
+  // ═══ PHÂN KHÚC KHÁCH HÀNG ═══
+  segmentVolume: { segment: string; count: number; color: string }[];
+
+  // ═══ SIGNING FUNNEL ═══
   signFunnel: { stage: string; count: number; color: string }[];
   signSuccessRate: number;
   totalSigned: number;
-  // BA: Form usage by source
+
+  // ═══ FORM USAGE ═══
   formUsageBySource: { source: string; count: number; color: string }[];
-  // BA: Most used forms (top 9)
   formUsage: { code: string; name: string; count: number; source: string }[];
-  // BA: Sign trend (last 14 days)
+
+  // ═══ DAILY SIGN TREND ═══
   signTrend: { day: string; signed: number; failed: number }[];
+
+  // ═══ RM PERFORMANCE ═══
+  rmPerformance: { name: string; dossiers: number; readyRate: number; color: string }[];
+
+  // ═══ KHÁCH HÀNG ═══
+  npsScore: number;
+  csatScore: number;
+  returningCustomers: number;
+  returnCustomerRate: number;
+
+  // ═══ FDI STRATEGIC ═══
+  fdiServed: number;
+  fdiBilingualForms: number;
+  fdiSatisfaction: number;
+
+  // ═══ KỲ TRƯỚC (delta) ═══
+  prevReadyRate: number;
+  prevAvgHandlingTime: number;
+  prevReturnRate: number;
+  prevNps: number;
 };
 
 const INITIAL: Metrics = {
-  apiResponseTime: 245,
-  errorRate: 2.1,
-  pageLoadTime: 890,
-  activeUsers: 14,
-  conversionRate: 68.5,
-  avgEngagement: 185,
-  taskSuccessRate: 91.2,
-  retentionRate: 76.3,
-  activeUsersHistory: Array.from({ length: 20 }, () => 8 + Math.floor(Math.random() * 12)),
-  responseTimeHistory: Array.from({ length: 20 }, () => 200 + Math.floor(Math.random() * 100)),
-  errorCount: 3,
-  successCount: 142,
-  tasksCompleted: 87,
-  tasksStarted: 95,
-  engagementByPage: [
-    { page: "Chat", seconds: 245 },
-    { page: "Forms", seconds: 120 },
-    { page: "Sign", seconds: 180 },
-    { page: "Guide", seconds: 65 },
+  totalDossiers: 1247,
+  readyCount: 1083,
+  missingCount: 112,
+  reviewCount: 52,
+  readyRate: 86.8,
+  avgHandlingTime: 12.5,
+  returnRate: 9.0,
+  handlingTimeHistory: Array.from({ length: 20 }, () => 10 + Math.random() * 6),
+  activeSessions: 14,
+  activeSessionsHistory: Array.from({ length: 20 }, () => 8 + Math.floor(Math.random() * 12)),
+  estimatedSavings: 174_580_000,
+  savingsToday: 12_600_000,
+  rmTimeSaved: 682,
+  segmentVolume: [
+    { segment: "KH Doanh nghiệp", count: 892, color: "#0B1F3A" },
+    { segment: "KH FDI", count: 156, color: "#7c3aed" },
+    { segment: "KH Cá nhân", count: 199, color: "#E30613" },
   ],
-  // BA: Signing funnel
   signFunnel: [
     { stage: "Form Selected", count: 320, color: "#1757A6" },
     { stage: "Data Collected", count: 285, color: "#7c3aed" },
@@ -65,13 +84,11 @@ const INITIAL: Metrics = {
   ],
   signSuccessRate: 68.1,
   totalSigned: 218,
-  // BA: Form usage by source
   formUsageBySource: [
     { source: "Chat (persona)", count: 198, color: "#E30613" },
     { source: "Forms (AI Fill)", count: 87, color: "#7c3aed" },
     { source: "Forms (download)", count: 45, color: "#1757A6" },
   ],
-  // BA: Most used forms
   formUsage: [
     { code: "MSB-EBANK-01", name: "Đăng ký bổ sung người dùng eBank", count: 72, source: "Chat" },
     { code: "MSB-EBANK-01-FDI", name: "Bổ sung eBank — FDI (Song ngữ)", count: 38, source: "Chat" },
@@ -83,12 +100,29 @@ const INITIAL: Metrics = {
     { code: "MSB-AC-08", name: "Thay đổi thông tin liên hệ", count: 18, source: "Forms" },
     { code: "MSB-EBANK-07", name: "Khóa/mở khóa dịch vụ eBank", count: 12, source: "Forms" },
   ],
-  // BA: Sign trend (last 14 days)
-  signTrend: Array.from({ length: 14 }, (_, i) => {
-    const day = `Day ${i + 1}`;
-    const signed = 8 + Math.floor(Math.random() * 18);
-    return { day, signed, failed: Math.floor(Math.random() * 4) };
-  }),
+  signTrend: Array.from({ length: 14 }, (_, i) => ({
+    day: `Day ${i + 1}`,
+    signed: 8 + Math.floor(Math.random() * 18),
+    failed: Math.floor(Math.random() * 4),
+  })),
+  rmPerformance: [
+    { name: "Nguyễn Thị Lan", dossiers: 87, readyRate: 91, color: "#00A676" },
+    { name: "Trần Hoàng Nam", dossiers: 72, readyRate: 88, color: "#1757A6" },
+    { name: "Lê Minh Đức", dossiers: 65, readyRate: 85, color: "#7c3aed" },
+    { name: "Phạm Thu Hà", dossiers: 58, readyRate: 89, color: "#E30613" },
+    { name: "Võ Thanh Tùng", dossiers: 51, readyRate: 83, color: "#F59E0B" },
+  ],
+  npsScore: 42,
+  csatScore: 4.3,
+  returningCustomers: 318,
+  returnCustomerRate: 25.5,
+  fdiServed: 156,
+  fdiBilingualForms: 89,
+  fdiSatisfaction: 4.6,
+  prevReadyRate: 82.1,
+  prevAvgHandlingTime: 14.8,
+  prevReturnRate: 12.5,
+  prevNps: 35,
 };
 
 function jitter(base: number, range: number, min: number, max: number): number {
@@ -97,51 +131,59 @@ function jitter(base: number, range: number, min: number, max: number): number {
 }
 
 function nextMetrics(prev: Metrics): Metrics {
-  const activeUsers = Math.max(1, Math.round(jitter(prev.activeUsers, 6, 1, 50)));
-  const apiResponseTime = Math.round(jitter(prev.apiResponseTime, 40, 80, 800));
-  const errorRate = jitter(prev.errorRate, 1.5, 0, 15);
-  const successTotal = prev.successCount + Math.floor(Math.random() * 8);
-  const errorTotal = Math.round(successTotal * (errorRate / 100));
-  const tasksStarted = prev.tasksStarted + Math.floor(Math.random() * 5);
-  const tasksCompleted = Math.min(tasksStarted, prev.tasksCompleted + Math.floor(Math.random() * 4));
+  const newDossiers = Math.floor(Math.random() * 3);
+  const totalDossiers = prev.totalDossiers + newDossiers;
+  const readyRate = jitter(prev.readyRate, 2, 75, 95);
+  const readyCount = Math.round((readyRate / 100) * totalDossiers);
+  const missingCount = Math.round(((100 - readyRate) / 100) * totalDossiers * 0.68);
+  const reviewCount = totalDossiers - readyCount - missingCount;
+  const avgHandlingTime = jitter(prev.avgHandlingTime, 1.2, 8, 20);
+  const returnRate = jitter(prev.returnRate, 0.8, 5, 15);
+  const activeSessions = Math.max(1, Math.round(jitter(prev.activeSessions, 6, 1, 50)));
+  const savingsPerTick = Math.round(prev.savingsToday / 288);
+  const estimatedSavings = prev.estimatedSavings + savingsPerTick;
+  const savingsToday = prev.savingsToday + Math.floor(Math.random() * 500_000);
+  const rmTimeSaved = prev.rmTimeSaved + (Math.random() > 0.5 ? 1 : 0);
+  const npsScore = jitter(prev.npsScore, 2, 20, 70);
+  const csatScore = jitter(prev.csatScore, 0.15, 3.5, 5.0);
+  const fdiServed = prev.fdiServed + (Math.random() > 0.7 ? 1 : 0);
+  const fdiBilingualForms = prev.fdiBilingualForms + (Math.random() > 0.8 ? 1 : 0);
+  const fdiSatisfaction = jitter(prev.fdiSatisfaction, 0.1, 4.0, 5.0);
+  const returningCustomers = prev.returningCustomers + (Math.random() > 0.6 ? 1 : 0);
+  const returnCustomerRate = jitter(prev.returnCustomerRate, 1.5, 15, 40);
 
   return {
-    apiResponseTime,
-    errorRate,
-    pageLoadTime: Math.round(jitter(prev.pageLoadTime, 50, 300, 2000)),
-    activeUsers,
-    conversionRate: jitter(prev.conversionRate, 3, 40, 95),
-    avgEngagement: Math.round(jitter(prev.avgEngagement, 20, 60, 400)),
-    taskSuccessRate: jitter(prev.taskSuccessRate, 2, 70, 99),
-    retentionRate: jitter(prev.retentionRate, 2, 50, 95),
-    activeUsersHistory: [...prev.activeUsersHistory.slice(1), activeUsers],
-    responseTimeHistory: [...prev.responseTimeHistory.slice(1), apiResponseTime],
-    errorCount: errorTotal,
-    successCount: successTotal,
-    tasksCompleted,
-    tasksStarted,
-    engagementByPage: prev.engagementByPage.map((e) => ({
-      ...e,
-      seconds: Math.round(jitter(e.seconds, 15, 30, 350)),
+    totalDossiers,
+    readyCount,
+    missingCount,
+    reviewCount,
+    readyRate,
+    avgHandlingTime,
+    returnRate,
+    handlingTimeHistory: [...prev.handlingTimeHistory.slice(1), avgHandlingTime],
+    activeSessions,
+    activeSessionsHistory: [...prev.activeSessionsHistory.slice(1), activeSessions],
+    estimatedSavings,
+    savingsToday,
+    rmTimeSaved,
+    segmentVolume: prev.segmentVolume.map((s) => ({
+      ...s,
+      count: s.count + (Math.random() > 0.6 ? 1 : 0),
     })),
-    // BA: Sign funnel — slight growth
     signFunnel: prev.signFunnel.map((s) => ({
       ...s,
       count: s.count + Math.floor(Math.random() * 3),
     })),
     signSuccessRate: jitter(prev.signSuccessRate, 1.5, 55, 85),
     totalSigned: prev.totalSigned + (Math.random() > 0.6 ? 1 : 0),
-    // BA: Form usage by source — slow growth
     formUsageBySource: prev.formUsageBySource.map((s) => ({
       ...s,
       count: s.count + (Math.random() > 0.7 ? 1 : 0),
     })),
-    // BA: Form usage — occasional new usage
     formUsage: prev.formUsage.map((f) => ({
       ...f,
       count: f.count + (Math.random() > 0.75 ? 1 : 0),
     })),
-    // BA: Sign trend — shift window + add new day
     signTrend: [
       ...prev.signTrend.slice(1),
       {
@@ -150,6 +192,22 @@ function nextMetrics(prev: Metrics): Metrics {
         failed: Math.floor(Math.random() * 4),
       },
     ],
+    rmPerformance: prev.rmPerformance.map((r) => ({
+      ...r,
+      dossiers: r.dossiers + (Math.random() > 0.7 ? 1 : 0),
+      readyRate: jitter(r.readyRate, 1, 75, 95),
+    })),
+    npsScore,
+    csatScore,
+    returningCustomers,
+    returnCustomerRate,
+    fdiServed,
+    fdiBilingualForms,
+    fdiSatisfaction,
+    prevReadyRate: prev.prevReadyRate,
+    prevAvgHandlingTime: prev.prevAvgHandlingTime,
+    prevReturnRate: prev.prevReturnRate,
+    prevNps: prev.prevNps,
   };
 }
 
