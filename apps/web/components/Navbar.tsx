@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Wordmark } from "./Logo";
 
-export function Navbar({ active = "home" }: { active?: "home" | "forms" | "sign" }) {
+export function Navbar({ active = "home" }: { active?: "home" | "forms" | "sign" | "dashboard" }) {
   return (
     <header className="navy-bg text-white">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
@@ -32,6 +32,14 @@ export function Navbar({ active = "home" }: { active?: "home" | "forms" | "sign"
             }`}
           >
             ✍️ Ký Số
+          </Link>
+          <Link
+            href="/dashboards/"
+            className={`rounded-btn px-3 py-1.5 text-xs font-semibold transition ${
+              active === "dashboard" ? "bg-white/15 text-white" : "text-white/60 hover:text-white hover:bg-white/10"
+            }`}
+          >
+            📊 Dashboard
           </Link>
           <Link
             href="/user-guide"

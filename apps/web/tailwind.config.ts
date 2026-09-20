@@ -37,6 +37,11 @@ export default {
           danger: "#E30613",
           dangerBg: "#FCE8EA",
         },
+        purple: {
+          DEFAULT: "#7c3aed",
+          50: "#F5F3FF",
+          600: "#7c3aed",
+        },
       },
       fontFamily: {
         sans: ["Inter", "Be Vietnam Pro", "system-ui", "sans-serif"],
@@ -45,6 +50,7 @@ export default {
       boxShadow: {
         card: "0 1px 3px rgba(11,31,58,.08)",
         hover: "0 8px 24px rgba(11,31,58,.12)",
+        kpi: "0 2px 8px rgba(11,31,58,.06)",
       },
       borderRadius: { card: "16px", btn: "10px" },
     },
