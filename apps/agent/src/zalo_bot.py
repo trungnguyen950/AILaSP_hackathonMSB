@@ -1,4 +1,4 @@
-"""Zalo Bot Platform integration — gửi tin nhắn + ảnh/preview PDF cho khách hàng.
+"""Zalo Bot Platform integration — gửi tin nhắn + ảnh preview cho khách hàng.
 
 Zalo Bot API (giống Telegram Bot API):
   Base URL: https://bot-api.zaloplatforms.com/bot<BOT_TOKEN>/<method>
@@ -18,10 +18,12 @@ Bot Token lấy từ:
   2. Env var ZALO_BOT_TOKEN (local dev fallback)
 
 Lưu ý: Zalo Bot API KHÔNG có sendDocument — không gửi file PDF trực tiếp được.
-Giải pháp: gửi text notification (markdown) + thử sendPhoto với PDF bytes (best effort).
+Giải pháp: gửi text notification (markdown) + gửi ảnh preview (PNG) tạo bằng Pillow.
 """
 from __future__ import annotations
 
+import base64
+import io
 import json
 import logging
 import os
@@ -264,11 +266,11 @@ def send_notification_to_customer(
     pdf_bytes: bytes | None = None,
     pdf_filename: str | None = None,
 ) -> dict:
-    """Gửi thông báo + PDF (best effort) cho khách hàng qua Zalo Bot.
+    """Gửi thông báo + ảnh preview cho khách hàng qua Zalo Bot.
 
     Workflow:
       1. Gửi text notification (markdown) — luôn thực hiện
-      2. (best effort) Gửi PDF qua sendPhoto multipart — có thể fail (không phải ảnh)
+      2. Tạo ảnh preview PNG từ PDF (dùng Pillow) — gửi qua sendPhoto
 
     Returns: dict tổng hợp {success, steps, ...}.
     """
@@ -292,23 +294,155 @@ def send_notification_to_customer(
         result["error"] = f"sendMessage exception: {e}"
         return result
 
-    # 2. Best effort: gửi PDF qua sendPhoto (multipart)
-    if pdf_bytes and pdf_filename:
+    # 2. Tạo ảnh preview PNG từ PDF + gửi qua sendPhoto
+    if pdf_bytes:
         try:
-            photo_res = send_photo_file(
-                token, chat_id, pdf_bytes, pdf_filename,
-                caption=f"📄 {pdf_filename} — bản mềm đã ký",
-            )
-            result["steps"]["photo"] = photo_res
-            if photo_res.get("ok"):
-                result["steps"]["photo_message_id"] = photo_res.get("result", {}).get("message_id")
+            png_bytes = _pdf_to_preview_png(pdf_bytes, pdf_filename or "document.pdf")
+            if png_bytes:
+                photo_res = send_photo_file(
+                    token, chat_id, png_bytes,
+                    filename=f"{(pdf_filename or 'preview').rsplit('.', 1)[0]}.png",
+                    caption=f"📄 {(pdf_filename or 'Bản mềm đã ký')} — preview",
+                    mime="image/png",
+                )
+                result["steps"]["photo"] = photo_res
+                if photo_res.get("ok"):
+                    result["steps"]["photo_message_id"] = photo_res.get("result", {}).get("message_id")
+                else:
+                    result["steps"]["photo_note"] = f"sendPhoto failed: {photo_res.get('description', '')}"
             else:
-                # PDF không phải ảnh → ghi note nhưng vẫn success (text đã gửi)
-                result["steps"]["photo_note"] = f"sendPhoto không chấp nhận PDF: {photo_res.get('description', '')}"
+                result["steps"]["photo_note"] = "Không tạo được ảnh preview từ PDF"
         except Exception as e:
-            logger.warning("Zalo sendPhoto (PDF) failed (expected): %s", e)
+            logger.warning("Zalo sendPhoto (preview) failed: %s", e)
             result["steps"]["photo_error"] = str(e)
 
     # Text đã gửi thành công → overall success
     result["success"] = True
     return result
+
+
+def _pdf_to_preview_png(pdf_bytes: bytes, filename: str) -> bytes | None:
+    """Tạo ảnh preview PNG từ PDF bằng Pillow.
+
+    Render trang đầu tiên của PDF thành ảnh PNG (đơn giản, không cần poppler).
+    Nếu không render được PDF, tạo ảnh preview text-based thay thế.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+
+        # Thử render PDF bằng pypdf + Pillow (extract first page as image)
+        try:
+            import pypdf
+
+            reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+            if len(reader.pages) > 0:
+                page = reader.pages[0]
+                # Try to extract images from the page
+                if "/XObject" in page.get("/Resources", {}):
+                    x_objects = page["/Resources"]["/XObject"].get_object()
+                    for obj_name in x_objects:
+                        obj = x_objects[obj_name]
+                        if obj.get("/Subtype") == "/Image":
+                            width = obj.get("/Width", 800)
+                            height = obj.get("/Height", 1000)
+                            color_space = obj.get("/ColorSpace", "/DeviceRGB")
+                            bits = obj.get("/BitsPerComponent", 8)
+                            data = obj.get_data()
+
+                            cs_name = str(color_space)
+                            if "RGB" in cs_name:
+                                mode = "RGB"
+                            elif "Gray" in cs_name:
+                                mode = "L"
+                            else:
+                                mode = "RGB"
+
+                            try:
+                                img = Image.frombytes(mode, (width, height), data)
+                            except Exception:
+                                # Try with raw decoder
+                                try:
+                                    img = Image.frombytes("RGB", (width, height), data, decoder_name="raw")
+                                except Exception:
+                                    continue
+
+                            # Resize to max 1200px wide for Zalo
+                            if img.width > 1200:
+                                ratio = 1200 / img.width
+                                img = img.resize((1200, int(img.height * ratio)), Image.LANCZOS)
+
+                            buf = io.BytesIO()
+                            img.save(buf, format="PNG", optimize=True)
+                            logger.info("PDF preview PNG created from embedded image: %dx%d", img.width, img.height)
+                            return buf.getvalue()
+        except Exception as e:
+            logger.debug("PDF image extraction failed: %s", e)
+
+        # Fallback: tạo ảnh preview text-based bằng Pillow
+        return _create_text_preview_png(filename)
+
+    except Exception as e:
+        logger.error("PDF to PNG preview failed: %s", e)
+        return None
+
+
+def _create_text_preview_png(filename: str) -> bytes:
+    """Tạo ảnh preview text-based khi không extract được image từ PDF."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    width, height = 800, 600
+    bg_color = (255, 255, 255)
+    header_color = (227, 6, 19)  # MSB red
+    text_color = (17, 24, 39)
+    subtext_color = (102, 112, 133)
+
+    img = Image.new("RGB", (width, height), bg_color)
+    draw = ImageDraw.Draw(img)
+
+    # Header bar
+    draw.rectangle([0, 0, width, 60], fill=header_color)
+
+    # Try to load a font
+    try:
+        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+        font_med = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
+    except Exception:
+        font_large = ImageFont.load_default()
+        font_med = ImageFont.load_default()
+        font_small = ImageFont.load_default()
+
+    # Header text
+    draw.text((20, 16), "MSB SmartForm AI", fill=(255, 255, 255), font=font_large)
+
+    # Content
+    y = 90
+    draw.text((20, y), "Bản mềm đã ký số", fill=text_color, font=font_large)
+    y += 40
+    draw.text((20, y), f"File: {filename}", fill=subtext_color, font=font_med)
+    y += 30
+    ts = datetime.now().strftime("%d/%m/%Y %H:%M")
+    draw.text((20, y), f"Thời gian: {ts}", fill=subtext_color, font=font_med)
+    y += 30
+    draw.text((20, y), "Trạng thái: Đã ký số thành công", fill=(0, 166, 118), font=font_med)
+
+    # Decorative line
+    y += 50
+    draw.line([(20, y), (width - 20, y)], fill=(229, 231, 235), width=2)
+
+    # Footer
+    y += 20
+    draw.text((20, y), "Ngân hàng TMCP Hàng Hải Việt Nam — MSB", fill=subtext_color, font=font_small)
+    y += 20
+    draw.text((20, y), "Dữ liệu giả lập — không dùng cho giao dịch thật.", fill=subtext_color, font=font_small)
+
+    # Signature icon area
+    y += 40
+    draw.rectangle([20, y, 300, y + 80], outline=(229, 231, 235), width=1)
+    draw.text((30, y + 10), "Chữ ký số (mock)", fill=subtext_color, font=font_small)
+    draw.text((30, y + 35), "MOCK-DIGITAL-SIGNATURE", fill=header_color, font=font_med)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    logger.info("Text preview PNG created: %dx%d", width, height)
+    return buf.getvalue()
