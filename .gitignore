@@ -1,12 +1,62 @@
+# ═══════════════════════════════════════════════
+# .gitignore — MSB SmartForm AI
+# ═══════════════════════════════════════════════
+
+# ─── Docs (internal, không publish) ───
+docs/
+
+# ─── Sensitive / Private / Credentials ───
+*.env
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.secret
+*.p12
+*.pfx
+credentials*
+*.credentials
+.greennode.json
+**/.greennode.json
+.agentbase/
+**/.agentbase/
+
+# ─── Library code / Dependencies ───
 **/node_modules/
-**/.next/
-**/out/
-**/__pycache__/
 **/venv/
 **/.venv/
+**/__pycache__/
 *.pyc
+**/.next/
+**/out/
+**/dist/
+**/build/
+
+# ─── OS / Editor files ───
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.log
+
+# ─── Build artifacts / Cache ───
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage/
+htmlcov/
+*.tar.gz
+*.zip
+
+# ─── Opencode internal ───
 .opencode/skills/
-.agentbase/
-apps/agent/.agentbase/
-apps/agent/.env
-apps/agent/.greennode.json
+.opencode/node_modules/
+
+# ─── Misc project files ───
+slides.pdf
+package-lock.json
