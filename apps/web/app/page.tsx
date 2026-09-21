@@ -51,6 +51,7 @@ function PageContent() {
   const [error, setError] = useState("");
   const [fileInfo, setFileInfo] = useState<{ filename: string; content: string; mime: string } | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [soanDone, setSoanDone] = useState(false);
   const [sessionId, setSessionId] = useState(`web-${Date.now()}`);
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -88,16 +89,19 @@ function PageContent() {
   function handle(res: AgentResponse) {
     if (res.selected_form) setForm(res.selected_form);
     if (res.status) setStatus(res.status);
-    if (res.checklist) setChecklist(res.checklist);
     if (res.output) setOutput(res.output);
-    if (res.file) setFileInfo(res.file);
-    else if (res.status && res.status !== "READY") setFileInfo(null);
+    // Only show checklist + file when SOẠN HỒ SƠ is explicitly clicked (soanDone)
+    // Not auto-show on READY — user must press SOẠN HỒ SƠ button
+    if (soanDone) {
+      if (res.checklist) setChecklist(res.checklist);
+      if (res.file) setFileInfo(res.file);
+    }
     let content: string;
     if (res.message) content = res.message;
     else if (res.question) content = res.question;
     else if (res.output) content = formatOutput(res.output);
     else content = "Đã xử lý.";
-    if (res.file) content += "\n\n📎 Bản mềm đã sẵn sàng — bấm tải xuống bên cạnh.";
+    if (soanDone && res.file) content += "\n\n📎 Bản mềm đã sẵn sàng — bấm tải xuống bên cạnh.";
     setMessages((m) => [...m, { role: "agent", content }]);
   }
 
@@ -116,6 +120,7 @@ function PageContent() {
     setMessages((m) => [...m, { role: "user", content: "SOẠN HỒ SƠ" }]);
     try {
       const res = await invoke("soan_ho_so", { session_id: sessionId });
+      setSoanDone(true);
       if (res.checklist) setChecklist(res.checklist);
       if (res.status) setStatus(res.status);
       if (res.file) setFileInfo(res.file);
@@ -161,6 +166,7 @@ function PageContent() {
     invoke("reset_session", { session_id: sessionId }).catch(() => {});
     const newSid = `web-${Date.now()}`;
     setSessionId(newSid);
+    setSoanDone(false);
     setMessages([
       { role: "agent", content: "Chào bạn! Tôi là MSB SmartForm AI — trợ lý lập hồ sơ & biểu mẫu. Hãy mô tả nhu cầu, hoặc bấm nút demo bên dưới." },
     ]);
@@ -176,6 +182,7 @@ function PageContent() {
   function startPersona(prompt: string) {
     const newSid = `persona-${Date.now()}`;
     setSessionId(newSid);
+    setSoanDone(false);
     setMessages([
       { role: "agent", content: "Chào bạn! Tôi là MSB SmartForm AI — trợ lý lập hồ sơ & biểu mẫu. Hãy mô tả nhu cầu, hoặc bấm nút demo bên dưới." },
     ]);
@@ -312,8 +319,8 @@ function PageContent() {
               </dl>
             </div>
           )}
-          <Checklist items={checklist} />
-          {fileInfo && (
+          {soanDone && <Checklist items={checklist} />}
+          {soanDone && fileInfo && (
             <div className="rounded-card border border-brand bg-brand-50 p-4 shadow-card">
               <div className="mb-2 text-sm font-bold text-ink-900">Bản mềm hồ sơ</div>
               <div className="mb-3 truncate text-xs text-ink-700">{fileInfo.filename}</div>
@@ -337,17 +344,17 @@ function PageContent() {
               <p className="mt-2 text-[10px] text-ink-500">PDF vintage — font tiếng Việt đầy đủ, thiết kế cổ điển.</p>
             </div>
           )}
+          {form && !soanDone && (
+            <button
+              className="brand-bg w-full rounded-btn px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+              onClick={soanHoSo} disabled={loading}
+            >SOẠN HỒ SƠ</button>
+          )}
           {form && (
-            <div className="space-y-2">
-              <button
-                className="brand-bg w-full rounded-btn px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
-                onClick={soanHoSo} disabled={loading}
-              >SOẠN HỒ SƠ</button>
-              <button
-                className="w-full rounded-btn border border-status-danger bg-white px-4 py-2.5 text-sm font-semibold text-status-danger transition hover:bg-status-dangerBg disabled:opacity-50"
-                onClick={resetAll} disabled={loading}
-              >↻ Xoá thông tin cũ, thực hiện lại</button>
-            </div>
+            <button
+              className="w-full rounded-btn border border-status-danger bg-white px-4 py-2.5 text-sm font-semibold text-status-danger transition hover:bg-status-dangerBg disabled:opacity-50"
+              onClick={resetAll} disabled={loading}
+            >↻ Xoá thông tin cũ, thực hiện lại</button>
           )}
         </aside>
       </div>
