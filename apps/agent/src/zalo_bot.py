@@ -322,63 +322,62 @@ def send_notification_to_customer(
 
 
 def _pdf_to_preview_png(pdf_bytes: bytes, filename: str) -> bytes | None:
-    """Tạo ảnh preview PNG từ PDF bằng Pillow.
+    """Tạo ảnh preview PNG từ PDF.
 
-    Render trang đầu tiên của PDF thành ảnh PNG (đơn giản, không cần poppler).
-    Nếu không render được PDF, tạo ảnh preview text-based thay thế.
+    Thử extract embedded image từ PDF bằng pypdf (pure Python).
+    Nếu không có image, tạo text-based preview PNG bằng pure Python (zlib + struct).
+    Không dùng Pillow — zero external dependency.
     """
     try:
-        from PIL import Image, ImageDraw, ImageFont
-
-        # Thử render PDF bằng pypdf + Pillow (extract first page as image)
+        # Thử extract embedded image từ PDF bằng pypdf
         try:
             import pypdf
 
             reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
             if len(reader.pages) > 0:
                 page = reader.pages[0]
-                # Try to extract images from the page
                 if "/XObject" in page.get("/Resources", {}):
                     x_objects = page["/Resources"]["/XObject"].get_object()
                     for obj_name in x_objects:
                         obj = x_objects[obj_name]
                         if obj.get("/Subtype") == "/Image":
-                            width = obj.get("/Width", 800)
-                            height = obj.get("/Height", 1000)
-                            color_space = obj.get("/ColorSpace", "/DeviceRGB")
-                            bits = obj.get("/BitsPerComponent", 8)
+                            width = int(obj.get("/Width", 800))
+                            height = int(obj.get("/Height", 600))
                             data = obj.get_data()
+                            cs = str(obj.get("/ColorSpace", "/DeviceRGB"))
+                            bits = int(obj.get("/BitsPerComponent", 8))
 
-                            cs_name = str(color_space)
-                            if "RGB" in cs_name:
-                                mode = "RGB"
-                            elif "Gray" in cs_name:
-                                mode = "L"
+                            mode = "RGB" if "RGB" in cs else ("L" if "Gray" in cs else "RGB")
+
+                            # Convert to RGB raw bytes
+                            if mode == "L":
+                                rgb_data = bytearray()
+                                for b in data[:width * height]:
+                                    rgb_data.extend([b, b, b])
+                                raw = bytes(rgb_data)
+                            elif mode == "RGB":
+                                raw = data[:width * height * 3]
                             else:
-                                mode = "RGB"
+                                # CMYK or other → simple fallback
+                                raw = data[:width * height * 3]
+                                if len(raw) < width * height * 3:
+                                    raw = raw + b'\xff' * (width * height * 3 - len(raw))
 
-                            try:
-                                img = Image.frombytes(mode, (width, height), data)
-                            except Exception:
-                                # Try with raw decoder
-                                try:
-                                    img = Image.frombytes("RGB", (width, height), data, decoder_name="raw")
-                                except Exception:
-                                    continue
+                            # Resize to max 1200px wide
+                            if width > 1200:
+                                new_w = 1200
+                                new_h = int(height * (1200 / width))
+                                raw = _resize_rgb(raw, width, height, new_w, new_h)
+                                width, height = new_w, new_h
 
-                            # Resize to max 1200px wide for Zalo
-                            if img.width > 1200:
-                                ratio = 1200 / img.width
-                                img = img.resize((1200, int(img.height * ratio)), Image.LANCZOS)
-
-                            buf = io.BytesIO()
-                            img.save(buf, format="PNG", optimize=True)
-                            logger.info("PDF preview PNG created from embedded image: %dx%d", img.width, img.height)
-                            return buf.getvalue()
+                            png = _encode_png_rgb(raw, width, height)
+                            if png:
+                                logger.info("PDF preview PNG from embedded image: %dx%d", width, height)
+                                return png
         except Exception as e:
             logger.debug("PDF image extraction failed: %s", e)
 
-        # Fallback: tạo ảnh preview text-based bằng Pillow
+        # Fallback: tạo text-based preview PNG (pure Python)
         return _create_text_preview_png(filename)
 
     except Exception as e:
@@ -386,63 +385,194 @@ def _pdf_to_preview_png(pdf_bytes: bytes, filename: str) -> bytes | None:
         return None
 
 
+def _encode_png_rgb(raw_rgb: bytes, width: int, height: int) -> bytes | None:
+    """Encode raw RGB bytes into PNG using only stdlib (zlib + struct).
+
+    Minimal PNG encoder — no Pillow, no external deps.
+    """
+    import zlib
+    import struct
+
+    if width <= 0 or height <= 0:
+        return None
+    if len(raw_rgb) < width * height * 3:
+        raw_rgb = raw_rgb + b'\xff' * (width * height * 3 - len(raw_rgb))
+
+    def make_chunk(chunk_type: bytes, data: bytes) -> bytes:
+        chunk = chunk_type + data
+        crc = zlib.crc32(chunk) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + chunk + struct.pack(">I", crc)
+
+    # PNG signature
+    sig = b'\x89PNG\r\n\x1a\n'
+
+    # IHDR: width, height, bit_depth=8, color_type=2 (RGB), compression=0, filter=0, interlace=0
+    ihdr_data = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    ihdr = make_chunk(b'IHDR', ihdr_data)
+
+    # IDAT: raw image data with filter byte (0 = None) per scanline
+    scanlines = bytearray()
+    for y in range(height):
+        scanlines.append(0)  # filter type: None
+        start = y * width * 3
+        scanlines.extend(raw_rgb[start:start + width * 3])
+    compressed = zlib.compress(bytes(scanlines), 9)
+    idat = make_chunk(b'IDAT', compressed)
+
+    # IEND
+    iend = make_chunk(b'IEND', b'')
+
+    return sig + ihdr + idat + iend
+
+
+def _resize_rgb(raw: bytes, old_w: int, old_h: int, new_w: int, new_h: int) -> bytes:
+    """Simple nearest-neighbor resize for RGB data."""
+    out = bytearray(new_w * new_h * 3)
+    for y in range(new_h):
+        src_y = min(int(y * old_h / new_h), old_h - 1)
+        for x in range(new_w):
+            src_x = min(int(x * old_w / new_w), old_w - 1)
+            src_idx = (src_y * old_w + src_x) * 3
+            dst_idx = (y * new_w + x) * 3
+            out[dst_idx:dst_idx + 3] = raw[src_idx:src_idx + 3]
+    return bytes(out)
+
+
 def _create_text_preview_png(filename: str) -> bytes:
-    """Tạo ảnh preview text-based khi không extract được image từ PDF."""
-    from PIL import Image, ImageDraw, ImageFont
+    """Tạo ảnh preview text-based bằng pure Python PNG encoder.
 
-    width, height = 800, 600
-    bg_color = (255, 255, 255)
-    header_color = (227, 6, 19)  # MSB red
-    text_color = (17, 24, 39)
-    subtext_color = (102, 112, 133)
+    Vẽ: header MSB red, filename, timestamp, status, footer.
+    Không dùng Pillow — chỉ dùng zlib + struct.
+    """
+    import zlib
+    import struct
 
-    img = Image.new("RGB", (width, height), bg_color)
-    draw = ImageDraw.Draw(img)
+    width, height = 800, 500
+    bg = (255, 255, 255)
+    header_bg = (227, 6, 19)  # MSB red
+    text_dark = (17, 24, 39)
+    text_gray = (102, 112, 133)
+    green = (0, 166, 118)
+    line_gray = (229, 231, 235)
+
+    # Create pixel buffer
+    pixels = bytearray(width * height * 3)
+    for i in range(width * height):
+        pixels[i * 3:i * 3 + 3] = bytes(bg)
+
+    def set_pixel(x: int, y: int, color: tuple):
+        if 0 <= x < width and 0 <= y < height:
+            idx = (y * width + x) * 3
+            pixels[idx:idx + 3] = bytes(color)
+
+    def fill_rect(x0: int, y0: int, x1: int, y1: int, color: tuple):
+        for y in range(max(0, y0), min(height, y1)):
+            for x in range(max(0, x0), min(width, x1)):
+                set_pixel(x, y, color)
+
+    def draw_h_line(x0: int, y: int, x1: int, color: tuple, thickness: int = 1):
+        for t in range(thickness):
+            for x in range(x0, min(width, x1)):
+                set_pixel(x, y + t, color)
+
+    def draw_rect(x0: int, y0: int, x1: int, y1: int, color: tuple, thickness: int = 1):
+        draw_h_line(x0, y0, x1, color, thickness)
+        draw_h_line(x0, y1 - thickness, x1, color, thickness)
+        for y in range(y0, y1):
+            set_pixel(x0, y, color)
+            set_pixel(x1 - 1, y, color)
+
+    def draw_text(x: int, y: int, text: str, color: tuple, scale: int = 2):
+        """Draw text using built-in 5x7 font bitmap."""
+        _FONT = _get_font_bitmap()
+        for i, ch in enumerate(text):
+            if ch.upper() not in _FONT:
+                ch = ' '
+            bitmap = _FONT.get(ch.upper(), _FONT.get(' ', [[0] * 5] * 7))
+            for row in range(7):
+                for col in range(5):
+                    if bitmap[row][col]:
+                        for sy in range(scale):
+                            for sx in range(scale):
+                                px = x + (i * 6 + col) * scale + sx
+                                py = y + row * scale + sy
+                                set_pixel(px, py, color)
 
     # Header bar
-    draw.rectangle([0, 0, width, 60], fill=header_color)
+    fill_rect(0, 0, width, 50, header_bg)
+    draw_text(20, 14, "MSB SMARTFORM AI", (255, 255, 255), 2)
 
-    # Try to load a font
-    try:
-        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-        font_med = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
-        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
-    except Exception:
-        font_large = ImageFont.load_default()
-        font_med = ImageFont.load_default()
-        font_small = ImageFont.load_default()
+    # Title
+    draw_text(20, 75, "BAN MEM DA KY SO", text_dark, 3)
 
-    # Header text
-    draw.text((20, 16), "MSB SmartForm AI", fill=(255, 255, 255), font=font_large)
-
-    # Content
-    y = 90
-    draw.text((20, y), "Bản mềm đã ký số", fill=text_color, font=font_large)
-    y += 40
-    draw.text((20, y), f"File: {filename}", fill=subtext_color, font=font_med)
-    y += 30
+    # File info
     ts = datetime.now().strftime("%d/%m/%Y %H:%M")
-    draw.text((20, y), f"Thời gian: {ts}", fill=subtext_color, font=font_med)
-    y += 30
-    draw.text((20, y), "Trạng thái: Đã ký số thành công", fill=(0, 166, 118), font=font_med)
+    safe_name = filename[:40] + "..." if len(filename) > 40 else filename
+    draw_text(20, 130, f"FILE: {safe_name}", text_gray, 2)
+    draw_text(20, 155, f"TIME: {ts}", text_gray, 2)
+    draw_text(20, 180, "STATUS: DA KY SO THANH CONG", green, 2)
 
-    # Decorative line
-    y += 50
-    draw.line([(20, y), (width - 20, y)], fill=(229, 231, 235), width=2)
+    # Separator line
+    draw_h_line(20, 220, width - 20, line_gray, 2)
+
+    # Signature box
+    draw_rect(20, 240, 350, 320, line_gray, 1)
+    draw_text(30, 250, "CHU KY SO (MOCK)", text_gray, 1)
+    draw_text(30, 275, "MOCK-DIGITAL-SIGNATURE", header_bg, 2)
 
     # Footer
-    y += 20
-    draw.text((20, y), "Ngân hàng TMCP Hàng Hải Việt Nam — MSB", fill=subtext_color, font=font_small)
-    y += 20
-    draw.text((20, y), "Dữ liệu giả lập — không dùng cho giao dịch thật.", fill=subtext_color, font=font_small)
+    draw_h_line(20, 350, width - 20, line_gray, 1)
+    draw_text(20, 365, "NGAN HANG TMCP HANG HAI VN - MSB", text_gray, 1)
+    draw_text(20, 385, "DU LIEU GIA LAP - KHONG DUNG CHO GIAO DICH THAT", text_gray, 1)
 
-    # Signature icon area
-    y += 40
-    draw.rectangle([20, y, 300, y + 80], outline=(229, 231, 235), width=1)
-    draw.text((30, y + 10), "Chữ ký số (mock)", fill=subtext_color, font=font_small)
-    draw.text((30, y + 35), "MOCK-DIGITAL-SIGNATURE", fill=header_color, font=font_med)
+    return _encode_png_rgb(bytes(pixels), width, height)
 
-    buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
-    logger.info("Text preview PNG created: %dx%d", width, height)
-    return buf.getvalue()
+
+def _get_font_bitmap() -> dict:
+    """5x7 bitmap font (uppercase A-Z, 0-9, space, dash, colon, dot, slash, paren)."""
+    return {
+        ' ': [[0]*5]*7,
+        'A': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1]],
+        'B': [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0]],
+        'C': [[0,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,1],[0,1,1,1,0]],
+        'D': [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0]],
+        'E': [[1,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,1]],
+        'F': [[1,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0]],
+        'G': [[0,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,0,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,1]],
+        'H': [[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1]],
+        'I': [[1,1,1,1,1],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[1,1,1,1,1]],
+        'J': [[0,0,1,1,1],[0,0,0,1,0],[0,0,0,1,0],[0,0,0,1,0],[1,0,0,1,0],[1,0,0,1,0],[0,1,1,0,0]],
+        'K': [[1,0,0,0,1],[1,0,0,1,0],[1,0,1,0,0],[1,1,0,0,0],[1,0,1,0,0],[1,0,0,1,0],[1,0,0,0,1]],
+        'L': [[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,1]],
+        'M': [[1,0,0,0,1],[1,1,0,1,1],[1,0,1,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1]],
+        'N': [[1,0,0,0,1],[1,1,0,0,1],[1,0,1,0,1],[1,0,0,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1]],
+        'O': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+        'P': [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0]],
+        'Q': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,1,0,1],[1,0,0,1,0],[0,1,1,0,1]],
+        'R': [[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,0],[1,0,1,0,0],[1,0,0,1,0],[1,0,0,0,1]],
+        'S': [[0,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[0,1,1,1,0],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,0]],
+        'T': [[1,1,1,1,1],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0]],
+        'U': [[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+        'V': [[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[0,1,0,1,0],[0,0,1,0,0]],
+        'W': [[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,1,0,1],[1,0,1,0,1],[1,1,0,1,1],[1,0,0,0,1]],
+        'X': [[1,0,0,0,1],[1,0,0,0,1],[0,1,0,1,0],[0,0,1,0,0],[0,1,0,1,0],[1,0,0,0,1],[1,0,0,0,1]],
+        'Y': [[1,0,0,0,1],[1,0,0,0,1],[0,1,0,1,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0]],
+        'Z': [[1,1,1,1,1],[0,0,0,0,1],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[1,0,0,0,0],[1,1,1,1,1]],
+        '0': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,1,1],[1,0,1,0,1],[1,1,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+        '1': [[0,0,1,0,0],[0,1,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,1,1,1,0]],
+        '2': [[0,1,1,1,0],[1,0,0,0,1],[0,0,0,0,1],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[1,1,1,1,1]],
+        '3': [[0,1,1,1,0],[1,0,0,0,1],[0,0,0,0,1],[0,0,1,1,0],[0,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+        '4': [[0,0,0,1,0],[0,0,1,1,0],[0,1,0,1,0],[1,0,0,1,0],[1,1,1,1,1],[0,0,0,1,0],[0,0,0,1,0]],
+        '5': [[1,1,1,1,1],[1,0,0,0,0],[1,1,1,1,0],[0,0,0,0,1],[0,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+        '6': [[0,1,1,1,0],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+        '7': [[1,1,1,1,1],[0,0,0,0,1],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[0,1,0,0,0],[0,1,0,0,0]],
+        '8': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,0]],
+        '9': [[0,1,1,1,0],[1,0,0,0,1],[1,0,0,0,1],[0,1,1,1,1],[0,0,0,0,1],[0,0,0,0,1],[0,1,1,1,0]],
+        '-': [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[1,1,1,1,1],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]],
+        ':': [[0,0,0,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,0,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,0,0,0]],
+        '.': [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,1,0,0],[0,0,1,0,0]],
+        '/': [[0,0,0,0,1],[0,0,0,1,0],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[0,1,0,0,0],[1,0,0,0,0]],
+        '(': [[0,0,1,0,0],[0,1,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0]],
+        ')': [[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[0,0,0,1,0],[0,0,1,0,0]],
+        '_': [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[1,1,1,1,1]],
+    }
