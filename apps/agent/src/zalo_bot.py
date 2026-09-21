@@ -22,6 +22,8 @@ Giải pháp: gửi text notification (markdown) + thử sendPhoto với PDF byt
 """
 from __future__ import annotations
 
+import base64
+import io
 import json
 import logging
 import os
@@ -264,11 +266,11 @@ def send_notification_to_customer(
     pdf_bytes: bytes | None = None,
     pdf_filename: str | None = None,
 ) -> dict:
-    """Gửi thông báo + PDF (best effort) cho khách hàng qua Zalo Bot.
+    """Gửi thông báo + ảnh preview cho khách hàng qua Zalo Bot.
 
     Workflow:
       1. Gửi text notification (markdown) — luôn thực hiện
-      2. (best effort) Gửi PDF qua sendPhoto multipart — có thể fail (không phải ảnh)
+      2. Chuyển PDF → ảnh PNG (Pillow) → gửi qua sendPhoto
 
     Returns: dict tổng hợp {success, steps, ...}.
     """
@@ -292,23 +294,149 @@ def send_notification_to_customer(
         result["error"] = f"sendMessage exception: {e}"
         return result
 
-    # 2. Best effort: gửi PDF qua sendPhoto (multipart)
-    if pdf_bytes and pdf_filename:
+    # 2. Convert PDF → PNG → send via sendPhoto
+    if pdf_bytes:
         try:
-            photo_res = send_photo_file(
-                token, chat_id, pdf_bytes, pdf_filename,
-                caption=f"📄 {pdf_filename} — bản mềm đã ký",
-            )
-            result["steps"]["photo"] = photo_res
-            if photo_res.get("ok"):
-                result["steps"]["photo_message_id"] = photo_res.get("result", {}).get("message_id")
+            png_bytes = _pdf_first_page_to_png(pdf_bytes)
+            if not png_bytes:
+                # Fallback: tạo preview image từ text
+                png_bytes = _create_preview_image(pdf_filename or "document.pdf")
+
+            if png_bytes:
+                base_name = (pdf_filename or "preview").rsplit(".", 1)[0]
+                photo_res = send_photo_file(
+                    token, chat_id, png_bytes,
+                    filename=f"{base_name}.png",
+                    caption=f"📄 {pdf_filename or 'Bản mềm đã ký'} — preview",
+                    mime="image/png",
+                )
+                result["steps"]["photo"] = photo_res
+                if photo_res.get("ok"):
+                    result["steps"]["photo_message_id"] = photo_res.get("result", {}).get("message_id")
+                else:
+                    result["steps"]["photo_note"] = f"sendPhoto failed: {photo_res.get('description', '')}"
             else:
-                # PDF không phải ảnh → ghi note nhưng vẫn success (text đã gửi)
-                result["steps"]["photo_note"] = f"sendPhoto không chấp nhận PDF: {photo_res.get('description', '')}"
+                result["steps"]["photo_note"] = "Không tạo được ảnh preview"
         except Exception as e:
-            logger.warning("Zalo sendPhoto (PDF) failed (expected): %s", e)
+            logger.warning("Zalo sendPhoto failed: %s", e)
             result["steps"]["photo_error"] = str(e)
 
     # Text đã gửi thành công → overall success
     result["success"] = True
     return result
+
+
+def _pdf_first_page_to_png(pdf_bytes: bytes) -> bytes | None:
+    """Extract first page of PDF as PNG image using pypdf + Pillow.
+
+    Tries to extract embedded images from the first page.
+    Returns PNG bytes or None if no images found.
+    """
+    try:
+        import pypdf
+        from PIL import Image
+
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        if not reader.pages:
+            return None
+
+        page = reader.pages[0]
+        resources = page.get("/Resources", {})
+        if "/XObject" not in resources:
+            return None
+
+        x_objects = resources["/XObject"].get_object()
+        for obj_name in x_objects:
+            obj = x_objects[obj_name]
+            if obj.get("/Subtype") != "/Image":
+                continue
+
+            width = int(obj.get("/Width", 800))
+            height = int(obj.get("/Height", 600))
+            data = obj.get_data()
+            cs = str(obj.get("/ColorSpace", "/DeviceRGB"))
+
+            if "Gray" in cs:
+                img = Image.frombytes("L", (width, height), data)
+                img = img.convert("RGB")
+            elif "RGB" in cs:
+                img = Image.frombytes("RGB", (width, height), data)
+            else:
+                # CMYK or other — try RGB best effort
+                try:
+                    img = Image.frombytes("RGB", (width, height), data)
+                except Exception:
+                    continue
+
+            # Resize to max 1200px wide
+            if img.width > 1200:
+                ratio = 1200 / img.width
+                img = img.resize((1200, int(img.height * ratio)), Image.LANCZOS)
+
+            buf = io.BytesIO()
+            img.save(buf, format="PNG", optimize=True)
+            logger.info("PDF → PNG: %dx%d → %dx%d", width, height, img.width, img.height)
+            return buf.getvalue()
+
+    except Exception as e:
+        logger.debug("PDF image extraction failed: %s", e)
+
+    return None
+
+
+def _create_preview_image(filename: str) -> bytes:
+    """Create a text-based PNG preview image using Pillow (fallback when PDF has no embedded images)."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    width, height = 800, 500
+    img = Image.new("RGB", (width, height), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    # Header bar (MSB red)
+    draw.rectangle([0, 0, width, 50], fill=(227, 6, 19))
+
+    # Try system font, fallback to default
+    try:
+        font_lg = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 22)
+        font_md = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 15)
+        font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
+    except Exception:
+        font_lg = ImageFont.load_default()
+        font_md = ImageFont.load_default()
+        font_sm = ImageFont.load_default()
+
+    draw.text((20, 14), "MSB SmartForm AI", fill=(255, 255, 255), font=font_lg)
+
+    y = 75
+    draw.text((20, y), "Ban mem da ky so", fill=(17, 24, 39), font=font_lg)
+    y += 40
+    safe_name = filename[:50] + "..." if len(filename) > 50 else filename
+    draw.text((20, y), f"File: {safe_name}", fill=(102, 112, 133), font=font_md)
+    y += 25
+    ts = datetime.now().strftime("%d/%m/%Y %H:%M")
+    draw.text((20, y), f"Thoi gian: {ts}", fill=(102, 112, 133), font=font_md)
+    y += 25
+    draw.text((20, y), "Trang thai: Da ky so thanh cong", fill=(0, 166, 118), font=font_md)
+
+    # Separator
+    y += 35
+    draw.line([(20, y), (width - 20, y)], fill=(229, 231, 235), width=2)
+
+    # Signature box
+    y += 15
+    draw.rectangle([20, y, 350, y + 70], outline=(229, 231, 235), width=1)
+    draw.text((30, y + 8), "Chu ky so (mock)", fill=(102, 112, 133), font=font_sm)
+    draw.text((30, y + 30), "MOCK-DIGITAL-SIGNATURE", fill=(227, 6, 19), font=font_md)
+
+    # Footer
+    y += 100
+    draw.line([(20, y), (width - 20, y)], fill=(229, 231, 235), width=1)
+    y += 10
+    draw.text((20, y), "Ngan hang TMCP Hang Hai VN - MSB", fill=(102, 112, 133), font=font_sm)
+    y += 18
+    draw.text((20, y), "Du lieu gia lap - khong dung cho giao dich that.", fill=(102, 112, 133), font=font_sm)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    logger.info("Preview image created: %dx%d", width, height)
+    return buf.getvalue()
